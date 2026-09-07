@@ -745,7 +745,6 @@
 
         /* 1. טעינת בתי הספר - GET */
         async function loadCloudData() {
-            // תמיכה ב-Google Apps Script במידה וקיים
             if (typeof google !== 'undefined' && google.script && google.script.run) {
                 google.script.run.withSuccessHandler(function(res) {
                     if (res && res.success) {
@@ -765,7 +764,6 @@
                 return;
             }
 
-            // עבודה מול שרת REST API חיצוני (GET Request)
             try {
                 var response = await fetch(API_BASE_URL + '/api/schools', {
                     method: 'GET',
@@ -988,7 +986,7 @@
                         populateAnnualSummaryForm(res.data);
                         showToast('סיכום הדרכה שנתי הופק בהצלחה על ידי הבינה המלאכותית!');
                     } else {
-                        showToast(res?.message || "שגיאה ביצירת סיכום AI", 'error');
+                        showToast((res && res.message) || "שגיאה ביצירת סיכום AI", 'error');
                     }
                 }).apiGenerateAnnualAiSummary(currentAuthToken, currentSchoolId);
             } else {
@@ -1038,7 +1036,7 @@
                         showToast("סיכום ההדרכה השנתי נשמר בהצלחה בענן!");
                         loadCloudData();
                     } else {
-                        showToast(res?.message || "שגיאה בשמירה", 'error');
+                        showToast((res && res.message) || "שגיאה בשמירה", 'error');
                     }
                 }).apiSaveAnnualSummary(currentAuthToken, summaryData);
             } else {
@@ -1093,7 +1091,7 @@
                             showToast('הקובץ הועלה בהצלחה');
                         } else {
                             statusEl.innerText = "❌ שגיאה בהעלאת הקובץ";
-                            showToast(res?.message || "שגיאה בהעלאה", 'error');
+                            showToast((res && res.message) || "שגיאה בהעלאה", 'error');
                         }
                     }).apiUploadFile(currentAuthToken, fileData);
                 } else {
@@ -1158,7 +1156,6 @@
             var btn = document.getElementById('school-save-btn');
             if (btn) { btn.disabled = true; btn.innerText = 'שומר...'; }
 
-            // תמיכה ב-Google Apps Script במידה וקיים
             if (typeof google !== 'undefined' && google.script && google.script.run) {
                 google.script.run
                     .withSuccessHandler(function(res) {
@@ -1179,7 +1176,6 @@
                 return;
             }
 
-            // עבודה מול שרת REST API (POST Request)
             try {
                 var response = await fetch(API_BASE_URL + '/api/schools', {
                     method: 'POST',
@@ -1223,7 +1219,7 @@
                         loadCloudData();
                         showToast('בית הספר נמחק בהצלחה');
                     } else {
-                        showToast(res?.message || 'שגיאה במחיקה', 'error');
+                        showToast((res && res.message) || 'שגיאה במחיקה', 'error');
                     }
                 }).apiDeleteSchool(currentAuthToken, currentSchoolId);
             } else {
@@ -1297,7 +1293,7 @@
                         loadCloudData();
                         showToast('המפגש נשמר בהצלחה בענן');
                     } else {
-                        showToast(res?.message || 'שגיאה בשמירת מפגש', 'error');
+                        showToast((res && res.message) || 'שגיאה בשמירת מפגש', 'error');
                     }
                 }).apiSaveMeeting(currentAuthToken, meetingData);
             } else {
@@ -1321,7 +1317,7 @@
                         loadCloudData();
                         showToast('המפגש נמחק');
                     } else {
-                        showToast(res?.message || 'שגיאה במחיקת מפגש', 'error');
+                        showToast((res && res.message) || 'שגיאה במחיקת מפגש', 'error');
                     }
                 }).apiDeleteMeeting(currentAuthToken, id);
             } else {
@@ -1441,7 +1437,7 @@
                         loadCloudData();
                         showToast('המשימה נשמרה בהצלחה');
                     } else {
-                        showToast(res?.message || 'שגיאה בשמירת משימה', 'error');
+                        showToast((res && res.message) || 'שגיאה בשמירת משימה', 'error');
                     }
                 }).apiSaveTask(currentAuthToken, taskData);
             } else {
@@ -1464,7 +1460,7 @@
                     if (res && res.success) {
                         loadCloudData();
                     } else {
-                        showToast(res?.message || 'שגיאה בעדכון משימה', 'error');
+                        showToast((res && res.message) || 'שגיאה בעדכון משימה', 'error');
                     }
                 }).apiSaveTask(currentAuthToken, task);
             } else {
@@ -1481,7 +1477,7 @@
                         loadCloudData();
                         showToast('המשימה נמחקה');
                     } else {
-                        showToast(res?.message || 'שגיאה במחיקת המשימה', 'error');
+                        showToast((res && res.message) || 'שגיאה במחיקת המשימה', 'error');
                     }
                 }).apiDeleteTask(currentAuthToken, taskId);
             } else {
@@ -1537,93 +1533,147 @@
                 return appData.meetings.filter(function(m) { return String(m.schoolId) === String(s.id); }).reduce(function(acc, curr) { return acc + (parseFloat(curr.hours) || 0); }, 0);
             });
 
-            var ctxSchool = document.getElementById('chart-hours-school').getContext('2d');
-            if (chartSchoolInstance) chartSchoolInstance.destroy();
-            chartSchoolInstance = new Chart(ctxSchool, {
-                type: 'bar',
-                data: {
-                    labels: schoolNames,
-                    datasets: [{
-                        label: 'שעות הדרכה',
-                        data: schoolHours,
-                        backgroundColor: '#14b8a6',
-                        borderRadius: 8
-                    }]
-                },
-                options: { responsive: true, maintainAspectRatio: false }
-            });
+            var canvasSchool = document.getElementById('chart-hours-school');
+            if (canvasSchool) {
+                var ctxSchool = canvasSchool.getContext('2d');
+                if (chartSchoolInstance) chartSchoolInstance.destroy();
+                chartSchoolInstance = new Chart(ctxSchool, {
+                    type: 'bar',
+                    data: {
+                        labels: schoolNames.length ? schoolNames : ['אין נתונים'],
+                        datasets: [{
+                            label: 'שעות הדרכה',
+                            data: schoolHours.length ? schoolHours : [0],
+                            backgroundColor: '#14b8a6',
+                            borderRadius: 8
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
 
-            var monthsMap = {};
-            appData.meetings.forEach(function(m) {
-                var month = m.date ? m.date.substring(0, 7) : 'כללי';
-                monthsMap[month] = (monthsMap[month] || 0) + 1;
-            });
+            var canvasMonth = document.getElementById('chart-meetings-month');
+            if (canvasMonth) {
+                var monthLabels = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+                var monthCounts = new Array(12).fill(0);
 
-            var ctxMonth = document.getElementById('chart-meetings-month').getContext('2d');
-            if (chartMonthInstance) chartMonthInstance.destroy();
-            chartMonthInstance = new Chart(ctxMonth, {
-                type: 'line',
-                data: {
-                    labels: Object.keys(monthsMap),
-                    datasets: [{
-                        label: 'מספר מפגשים',
-                        data: Object.values(monthsMap),
-                        borderColor: '#0d9488',
-                        tension: 0.3,
-                        fill: false
-                    }]
-                },
-                options: { responsive: true, maintainAspectRatio: false }
-            });
+                (appData.meetings || []).forEach(function(m) {
+                    if (m && m.date) {
+                        var d = new Date(m.date);
+                        if (!isNaN(d.getTime())) {
+                            monthCounts[d.getMonth()]++;
+                        }
+                    }
+                });
+
+                var ctxMonth = canvasMonth.getContext('2d');
+                if (chartMonthInstance) chartMonthInstance.destroy();
+                chartMonthInstance = new Chart(ctxMonth, {
+                    type: 'line',
+                    data: {
+                        labels: monthLabels,
+                        datasets: [{
+                            label: 'מספר מפגשים',
+                            data: monthCounts,
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 4
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
         }
 
         function renderReportPreview() {
-            var selectSchool = document.getElementById('report-filter-school');
-            if (selectSchool) {
-                selectSchool.innerHTML = '<option value="all">כל בתי הספר</option>' + appData.schools.map(function(s) { return '<option value="' + s.id + '">' + s.name + '</option>'; }).join('');
+            var schoolSelect = document.getElementById('report-filter-school');
+            if (schoolSelect) {
+                var currentVal = schoolSelect.value || 'all';
+                var optionsHtml = '<option value="all">כל בתי הספר</option>';
+                (appData.schools || []).forEach(function(s) {
+                    optionsHtml += '<option value="' + s.id + '"' + (String(s.id) === String(currentVal) ? ' selected' : '') + '>' + (s.name || 'בית ספר') + '</option>';
+                });
+                schoolSelect.innerHTML = optionsHtml;
             }
 
-            var schoolFilter = document.getElementById('report-filter-school') ? document.getElementById('report-filter-school').value : 'all';
+            var selectedSchoolId = schoolSelect ? schoolSelect.value : 'all';
             var sortOrder = document.getElementById('report-filter-sort') ? document.getElementById('report-filter-sort').value : 'desc';
 
-            var filteredMeetings = appData.meetings.slice();
-            if (schoolFilter !== 'all') {
-                filteredMeetings = filteredMeetings.filter(function(m) { return String(m.schoolId) === String(schoolFilter); });
-            }
-
-            filteredMeetings.sort(function(a, b) {
-                return sortOrder === 'desc' ? new Date(b.date) - new Date(a.date) : new Date(a.date) - new Date(b.date);
+            var filteredMeetings = (appData.meetings || []).filter(function(m) {
+                return selectedSchoolId === 'all' || String(m.schoolId) === String(selectedSchoolId);
             });
 
-            var container = document.getElementById('report-print-container');
-            var instructorName = (currentUser && currentUser.fullName) ? currentUser.fullName : 'מדריך/ה פדגוגי/ת';
+            filteredMeetings.sort(function(a, b) {
+                var dateA = new Date(a.date || 0);
+                var dateB = new Date(b.date || 0);
+                return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+            });
 
-            container.innerHTML = '<div class="border-b-2 border-slate-900 pb-4 mb-6 flex justify-between items-center">' +
-                '<div>' +
-                    '<h1 class="text-2xl font-bold text-slate-900">דוח הדרכה פדגוגי מרוכז</h1>' +
-                    '<p class="text-xs text-slate-600 mt-1">מדריך/ה: ' + instructorName + ' | תאריך הפקה: ' + new Date().toLocaleDateString('he-IL') + '</p>' +
+            var totalHours = filteredMeetings.reduce(function(acc, m) { return acc + (parseFloat(m.hours) || 0); }, 0);
+            var printContainer = document.getElementById('report-print-container');
+            if (!printContainer) return;
+
+            var todayStr = new Date().toLocaleDateString('he-IL');
+            var selectedSchoolObj = appData.schools.find(function(s) { return String(s.id) === String(selectedSchoolId); });
+
+            var html = '<div class="space-y-6 text-slate-800">' +
+                '<div class="border-b-2 border-slate-900 pb-4 flex justify-between items-end">' +
+                    '<div>' +
+                        '<h1 class="text-2xl font-bold text-slate-900">דוח סיכום הדרכה פדגוגית</h1>' +
+                        '<p class="text-sm text-slate-500 mt-1">' + (selectedSchoolObj ? 'בית ספר: ' + selectedSchoolObj.name + ' (סמל: ' + (selectedSchoolObj.symbol || '-') + ')' : 'כל בתי הספר במערכת') + '</p>' +
+                    '</div>' +
+                    '<div class="text-left text-xs text-slate-500">' +
+                        '<div>תאריך הפקה: ' + todayStr + '</div>' +
+                        '<div>מפיק: ' + ((currentUser && currentUser.fullName) ? currentUser.fullName : 'מדריך/ה פדגוגי/ת') + '</div>' +
+                    '</div>' +
                 '</div>' +
-                '<div class="text-left text-xs text-slate-500">' +
-                    '<div>סה"כ מפגשים בדוח: <strong>' + filteredMeetings.length + '</strong></div>' +
-                    '<div>סה"כ שעות: <strong>' + filteredMeetings.reduce(function(acc, c) { return acc + (parseFloat(c.hours) || 0); }, 0) + '</strong></div>' +
-                '</div>' +
-            '</div>' +
-            '<div class="space-y-6">' +
-                filteredMeetings.map(function(m) {
-                    var school = appData.schools.find(function(s) { return String(s.id) === String(m.schoolId); });
-                    return '<div class="border-b border-slate-200 pb-4">' +
-                        '<div class="flex justify-between items-center mb-1">' +
-                            '<h3 class="font-bold text-sm text-slate-800">' + m.title + ' - ' + (school ? school.name : '') + '</h3>' +
-                            '<span class="text-xs text-slate-500">' + m.date + ' (' + m.hours + ' שעות)</span>' +
-                        '</div>' +
-                        '<div class="grid grid-cols-2 gap-2 text-xs text-slate-700 mt-2">' +
-                            (m.achievements ? '<div><strong>הישגים:</strong> ' + m.achievements + '</div>' : '') +
-                            (m.processes ? '<div><strong>תהליכים:</strong> ' + m.processes + '</div>' : '') +
-                            (m.recommendations ? '<div class="col-span-2"><strong>המלצות ויעדים:</strong> ' + m.recommendations + '</div>' : '') +
-                        '</div>' +
+
+                '<div class="grid grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 text-center text-xs">' +
+                    '<div><span class="text-slate-500 block">סה"כ מפגשים</span><strong class="text-lg font-bold text-slate-800">' + filteredMeetings.length + '</strong></div>' +
+                    '<div><span class="text-slate-500 block">סה"כ שעות הדרכה</span><strong class="text-lg font-bold text-slate-800">' + totalHours + '</strong></div>' +
+                    '<div><span class="text-slate-500 block">מוסדות נכללים</span><strong class="text-lg font-bold text-slate-800">' + (selectedSchoolId === 'all' ? appData.schools.length : 1) + '</strong></div>' +
+                '</div>';
+
+            if (selectedSchoolObj) {
+                var annual = (appData.annualSummaries || []).find(function(a) { return String(a.schoolId) === String(selectedSchoolObj.id); });
+                if (annual) {
+                    html += '<div class="bg-amber-50/40 p-4 rounded-xl border border-amber-200 space-y-2 text-xs">' +
+                        '<h3 class="font-bold text-sm text-amber-900 border-b border-amber-200 pb-1">🏆 סיכום הדרכה שנתי</h3>' +
+                        (annual.achievements ? '<div><strong>הישגים מרכזיים:</strong> ' + annual.achievements + '</div>' : '') +
+                        (annual.processes ? '<div><strong>תהליכים משמעותיים:</strong> ' + annual.processes + '</div>' : '') +
+                        (annual.recommendations ? '<div><strong>המלצות להמשך:</strong> ' + annual.recommendations + '</div>' : '') +
                     '</div>';
-                }).join('') +
-            '</div>';
+                }
+            }
+
+            html += '<div class="space-y-4">' +
+                '<h3 class="font-bold text-base text-slate-900 border-b border-slate-200 pb-2">פירוט מפגשי הדרכה</h3>';
+
+            if (filteredMeetings.length === 0) {
+                html += '<p class="text-xs text-slate-400 italic text-center py-6">אין מפגשים להצגה לפי הסינון הנבחר.</p>';
+            } else {
+                filteredMeetings.forEach(function(m) {
+                    var sch = appData.schools.find(function(s) { return String(s.id) === String(m.schoolId); });
+                    html += '<div class="p-4 bg-white rounded-xl border border-slate-200 space-y-2 text-xs shadow-sm">' +
+                        '<div class="flex justify-between items-center font-bold text-sm text-slate-800">' +
+                            '<span>' + (m.title || 'מפגש הדרכה') + (selectedSchoolId === 'all' && sch ? ' - ' + sch.name : '') + '</span>' +
+                            '<span class="text-xs font-normal text-slate-500">' + (m.date || '') + ' | ' + (m.hours || 0) + ' שעות</span>' +
+                        '</div>';
+
+                    if (m.achievements) html += '<p><strong>הישגים:</strong> ' + m.achievements + '</p>';
+                    if (m.processes) html += '<p><strong>תהליכים:</strong> ' + m.processes + '</p>';
+                    if (m.challenges) html += '<p><strong>אתגרים:</strong> ' + m.challenges + '</p>';
+                    if (m.recommendations) html += '<p><strong>המלצות ויעדים:</strong> ' + m.recommendations + '</p>';
+                    if (m.notes) html += '<p><strong>הערות:</strong> ' + m.notes + '</p>';
+
+                    html += '</div>';
+                });
+            }
+
+            html += '</div></div>';
+            printContainer.innerHTML = html;
         }
     </script>
 </body>
