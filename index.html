@@ -1,159 +1,1630 @@
-// הגדרת כתובת ה-API של השרת שלך (במידה ומשתמשים בשרת חיצוני)
-var API_BASE_URL = 'https://YOUR_API_ENDPOINT_HERE';
-
-/**
- * טעינת בתי הספר מהשרת (קריאה - GET)
- */
-async function loadCloudData() {
-    // 1. עבודה בסביבת Google Apps Script
-    if (typeof google !== 'undefined' && google.script && google.script.run) {
-        google.script.run
-            .withSuccessHandler(function(res) {
-                if (res && res.success) {
-                    appData = res.data || { schools: [], meetings: [], tasks: [], annualSummaries: [] };
-                    appData.schools = appData.schools || [];
-                    appData.meetings = appData.meetings || [];
-                    appData.tasks = appData.tasks || [];
-                    appData.annualSummaries = appData.annualSummaries || [];
-                    refreshAllViews();
-                } else if (res && res.message) {
-                    showToast(res.message, 'error');
-                    handleSignOut();
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>תיק מדריך - מערכת פדגוגית לניהול הדרכה</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdfa',
+                            100: '#ccfbf1',
+                            200: '#99f6e4',
+                            500: '#14b8a6',
+                            600: '#0d9488',
+                            700: '#0f766e',
+                            800: '#115e59',
+                            900: '#134e4a',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Rubik', 'Segoe UI', 'sans-serif']
+                    }
                 }
-            })
-            .withFailureHandler(function(err) {
-                showToast("שגיאה בטעינת הנתונים מהשרת: " + (err.message || err), 'error');
-            })
-            .apiGetInstructorData(currentAuthToken);
-        return;
-    }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js CDN Stable -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 
-    // 2. עבודה מול שרת REST API חיצוני (GET Request)
-    try {
-        var response = await fetch(API_BASE_URL + '/api/schools', {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + currentAuthToken
+    <style>
+        body { font-family: 'Rubik', sans-serif; background-color: #f8fafc; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        summary::-webkit-details-marker { display: none; }
+        summary { list-style: none; }
+        @media print {
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            body { background-color: white !important; }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col custom-scrollbar">
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed bottom-5 left-5 z-50 flex flex-col gap-2 no-print"></div>
+
+    <header id="main-header" class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm hidden no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-700 to-brand-500 flex items-center justify-center text-white shadow-md">
+                        <i class="fa-solid fa-folder-open text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold text-slate-900 tracking-tight leading-none">תיק מדריך</h1>
+                        <span class="text-xs text-brand-600 font-medium">מערכת פדגוגית לניהול הדרכה בענן</span>
+                    </div>
+                </div>
+
+                <!-- Navigation Tabs -->
+                <nav class="hidden md:flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                    <button onclick="switchTab('schools')" id="nav-schools" class="nav-btn px-3 py-1.5 rounded-lg text-sm font-medium transition-all text-brand-700 bg-white shadow-sm">
+                        <i class="fa-solid fa-school text-xs ml-1.5"></i> בתי הספר שלי
+                    </button>
+                    <button onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-btn px-3 py-1.5 rounded-lg text-sm font-medium transition-all text-slate-600 hover:text-slate-900">
+                        <i class="fa-solid fa-chart-pie text-xs ml-1.5"></i> דשבורד
+                    </button>
+                    <button onclick="switchTab('tasks')" id="nav-tasks" class="nav-btn px-3 py-1.5 rounded-lg text-sm font-medium transition-all text-slate-600 hover:text-slate-900">
+                        <i class="fa-solid fa-list-check text-xs ml-1.5"></i> משימות ותזכורות
+                    </button>
+                    <button onclick="switchTab('reports')" id="nav-reports" class="nav-btn px-3 py-1.5 rounded-lg text-sm font-medium transition-all text-slate-600 hover:text-slate-900">
+                        <i class="fa-solid fa-file-invoice text-xs ml-1.5"></i> דוחות וייצוא
+                    </button>
+                </nav>
+
+                <!-- User Profile & Status -->
+                <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-2 px-3 py-1 bg-teal-50 border border-teal-200 rounded-full text-xs text-teal-700 font-medium">
+                        <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+                        <span id="user-display-email">מחובר בענן</span>
+                    </div>
+
+                    <button onclick="handleSignOut()" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors">
+                        <i class="fa-solid fa-right-from-bracket"></i> התנתק
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+
+        <!-- Auth View -->
+        <section id="auth-section" class="max-w-md mx-auto my-12 bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden no-print">
+            <div class="p-8 text-center bg-gradient-to-b from-brand-50 to-white">
+                <div class="w-16 h-16 rounded-2xl bg-brand-600 text-white flex items-center justify-center mx-auto mb-4 shadow-lg">
+                    <i class="fa-solid fa-folder-open text-3xl"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-slate-900">תיק מדריך בענן</h2>
+                <p class="text-sm text-slate-600 mt-1">מערכת פדגוגית אישית לניהול הדרכה ומפגשים</p>
+            </div>
+
+            <div class="flex border-b border-slate-200 bg-slate-50">
+                <button id="auth-tab-login" onclick="setAuthMode('login')" class="flex-1 py-3 text-sm font-semibold text-brand-700 border-b-2 border-brand-600 bg-white">
+                    התחברות
+                </button>
+                <button id="auth-tab-register" onclick="setAuthMode('register')" class="flex-1 py-3 text-sm font-semibold text-slate-500 border-b-2 border-transparent">
+                    הרשמה חדשה
+                </button>
+            </div>
+
+            <div class="p-6 sm:p-8">
+                <form id="auth-form" onsubmit="handleAuthSubmit(event)">
+                    <div id="field-full-name" class="hidden mb-4">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">שם מלא *</label>
+                        <input type="text" id="auth-name" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none" placeholder="ישראל ישראלי">
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">דוא"ל אישי *</label>
+                        <input type="email" id="auth-email" required class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none" placeholder="instructor@example.com">
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">סיסמה *</label>
+                        <input type="password" id="auth-password" required minlength="6" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none" placeholder="••••••••">
+                    </div>
+
+                    <div id="auth-message" class="hidden mb-4 p-3 rounded-lg text-xs font-medium"></div>
+
+                    <button type="submit" id="auth-submit-btn" class="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg shadow transition-all flex items-center justify-center gap-2">
+                        <span>כניסה למערכת</span>
+                        <i class="fa-solid fa-arrow-left text-xs"></i>
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <!-- View: Schools List -->
+        <section id="view-schools" class="view-content hidden">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                <div>
+                    <h2 class="text-2xl font-bold text-slate-900">בתי הספר שלי</h2>
+                    <p class="text-sm text-slate-500">ניהול מבודד ואישי של בתי הספר בהדרכתך</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <input type="text" id="schools-search" oninput="renderSchoolsList()" placeholder="חפש בית ספר..." class="p-2 border border-slate-200 rounded-xl text-xs w-48 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                    <button onclick="openSchoolModal()" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-medium text-sm shadow-sm flex items-center gap-2 transition-all">
+                        <i class="fa-solid fa-plus"></i> הוסף בית ספר
+                    </button>
+                </div>
+            </div>
+
+            <div id="schools-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Dynamic Schools Cards -->
+            </div>
+        </section>
+
+        <!-- View: School Detail -->
+        <section id="view-school-detail" class="view-content hidden">
+            <div class="flex items-center justify-between mb-4 no-print">
+                <button onclick="switchTab('schools')" class="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-sm transition-all">
+                    <i class="fa-solid fa-arrow-right"></i> חזרה לרשימת בתי הספר
+                </button>
+
+                <div class="flex items-center gap-2">
+                    <button onclick="editCurrentSchool()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1">
+                        <i class="fa-solid fa-pen"></i> ערוך פרטי מוסד
+                    </button>
+                    <button onclick="confirmDeleteSchool()" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-xs font-semibold flex items-center gap-1">
+                        <i class="fa-solid fa-trash"></i> מחק בית ספר
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-gradient-to-r from-slate-900 via-brand-900 to-slate-800 text-white p-6 rounded-2xl shadow-md mb-6">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <h2 id="detail-school-name" class="text-2xl sm:text-3xl font-bold">שם בית ספר</h2>
+                        <p id="detail-school-location" class="text-slate-300 text-sm mt-1">יישוב</p>
+                    </div>
+                    <div id="school-contacts-badges" class="flex flex-wrap gap-2 text-xs">
+                        <!-- Contacts badges -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Meetings List Section -->
+            <div class="flex items-center justify-between gap-4 border-b border-slate-200 pb-4 mb-6 no-print">
+                <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-comments text-brand-600"></i> תיעוד מפגשי הדרכה
+                </h3>
+                <button onclick="openMeetingModal()" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold shadow transition-all flex items-center gap-1.5">
+                    <i class="fa-solid fa-plus"></i> תיעוד מפגש חדש
+                </button>
+            </div>
+
+            <div id="meetings-list-container" class="space-y-4 mb-8">
+                <!-- Dynamic Meetings -->
+            </div>
+
+            <!-- Annual Guidance Process Summary -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mb-6 no-print">
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4 mb-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-award text-amber-500"></i> סיכום תהליך ההדרכה השנתי
+                        </h3>
+                        <p class="text-xs text-slate-500 mt-0.5">ניתן לנסח ידנית או להפיק אוטומטית ממפגשי ההדרכה בעזרת הבינה המלאכותית</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="generateAnnualAiSummary(event)" class="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow flex items-center gap-1.5 transition-all">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> מחולל סיכום AI אוטומטי
+                        </button>
+                        <button type="button" onclick="saveAnnualSummary()" id="btn-save-annual" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold shadow transition-all">
+                            שמור סיכום שנתי
+                        </button>
+                    </div>
+                </div>
+
+                <form id="annual-summary-form" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <input type="hidden" id="annual-id">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">🏆 הישגים מרכזיים</label>
+                        <textarea id="annual-achievements" rows="3" class="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500" placeholder="פירוט ההישגים המרכזיים..."></textarea>
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">🔄 תהליכים משמעותיים</label>
+                        <textarea id="annual-processes" rows="3" class="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500" placeholder="תהליכים פדגוגיים שהובלו..."></textarea>
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">💪 נקודות חוזק</label>
+                        <textarea id="annual-strengths" rows="3" class="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500" placeholder="חוזקות בולטות בצוות..."></textarea>
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">⚠️ אתגרים</label>
+                        <textarea id="annual-challenges" rows="3" class="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500" placeholder="חסמים ואתגרים שעמדו בדרך..."></textarea>
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">💬 צרכים שעלו במהלך השנה</label>
+                        <textarea id="annual-needs" rows="3" class="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500" placeholder="צרכים פדגוגיים וארגוניים..."></textarea>
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">📚 נושאים מרכזיים שנדרשו להדרכה</label>
+                        <textarea id="annual-topics" rows="3" class="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500" placeholder="תחומי התוכן שנדרשו..."></textarea>
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">📌 נושאים הדורשים המשך עבודה</label>
+                        <textarea id="annual-next-topics" rows="3" class="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500" placeholder="נושאים פתוחים לשנה הבאה..."></textarea>
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">🎯 יעדים להמשך</label>
+                        <textarea id="annual-goals" rows="3" class="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500" placeholder="יעדים פדגוגיים להמשך..."></textarea>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block font-semibold text-slate-700 mb-1">💡 המלצות להמשך</label>
+                        <textarea id="annual-recommendations" rows="3" class="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500" placeholder="המלצות אופרטיביות..."></textarea>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <!-- View: Dashboard -->
+        <section id="view-dashboard" class="view-content hidden">
+            <div class="mb-6">
+                <h2 class="text-2xl font-bold text-slate-900">📊 דשבורד ונתוני הדרכה</h2>
+                <p class="text-sm text-slate-500">ניתוח היקף שעות ההדרכה, מפגשים ותפוקות פדגוגיות</p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <span class="text-xs text-slate-400 font-medium">סה"כ בתי ספר</span>
+                        <h4 id="stat-total-schools" class="text-2xl font-bold text-slate-800">0</h4>
+                    </div>
+                    <div class="w-10 h-10 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-school"></i>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <span class="text-xs text-slate-400 font-medium">סה"כ מפגשים שבוצעו</span>
+                        <h4 id="stat-total-meetings" class="text-2xl font-bold text-slate-800">0</h4>
+                    </div>
+                    <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-calendar-check"></i>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <span class="text-xs text-slate-400 font-medium">סה"כ שעות הדרכה</span>
+                        <h4 id="stat-total-hours" class="text-2xl font-bold text-slate-800">0</h4>
+                    </div>
+                    <div class="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-clock"></i>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <span class="text-xs text-slate-400 font-medium">משימות פתוחות</span>
+                        <h4 id="stat-open-tasks" class="text-2xl font-bold text-slate-800">0</h4>
+                    </div>
+                    <div class="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-list-check"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                    <h3 class="text-sm font-bold text-slate-800 mb-4">שעות הדרכה לפי בית ספר</h3>
+                    <div class="h-64"><canvas id="chart-hours-school"></canvas></div>
+                </div>
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                    <h3 class="text-sm font-bold text-slate-800 mb-4">התפלגות מפגשים לפי חודשים</h3>
+                    <div class="h-64"><canvas id="chart-meetings-month"></canvas></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- View: Tasks -->
+        <section id="view-tasks" class="view-content hidden">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                <div>
+                    <h2 class="text-2xl font-bold text-slate-900">משימות ותזכורות פדגוגיות</h2>
+                    <p class="text-sm text-slate-500">מעקב אחר יעדים, משימות לביצוע ומעקבים לבתי הספר</p>
+                </div>
+                <button onclick="openTaskModal()" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-medium text-sm shadow-sm flex items-center gap-2 transition-all">
+                    <i class="fa-solid fa-plus"></i> הוסף משימה חדשה
+                </button>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div id="tasks-list-container" class="divide-y divide-slate-100">
+                    <!-- Dynamic tasks -->
+                </div>
+            </div>
+        </section>
+
+        <!-- View: Reports -->
+        <section id="view-reports" class="view-content hidden">
+            <div class="flex justify-between items-center mb-6 no-print">
+                <div>
+                    <h2 class="text-2xl font-bold text-slate-900">דוחות פדגוגיים וסיכומים</h2>
+                    <p class="text-sm text-slate-500">הפקת דוחות מרוכזים להדפסה וייצוא</p>
+                </div>
+                <button onclick="window.print()" class="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold shadow flex items-center gap-2">
+                    <i class="fa-solid fa-print"></i> הדפס / שמור כ-PDF
+                </button>
+            </div>
+
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm mb-6 flex flex-wrap gap-4 items-center no-print">
+                <div class="flex-1 min-w-[200px]">
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">סנן לפי בית ספר</label>
+                    <select id="report-filter-school" onchange="renderReportPreview()" class="w-full p-2 border border-slate-200 rounded-lg text-xs">
+                        <option value="all">כל בתי הספר</option>
+                    </select>
+                </div>
+                <div class="flex-1 min-w-[200px]">
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">מיון</label>
+                    <select id="report-filter-sort" onchange="renderReportPreview()" class="w-full p-2 border border-slate-200 rounded-lg text-xs">
+                        <option value="desc">מהחדש לישן</option>
+                        <option value="asc">מהישן לחדש</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="report-print-container" class="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm">
+                <!-- Dynamic Printable Content -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Modal: School -->
+    <div id="modal-school" onclick="closeModalOnOverlay(event, 'modal-school')" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4 no-print">
+        <div class="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h3 id="modal-school-title" class="font-bold text-slate-800 text-lg mb-4">+ הוספת בית ספר</h3>
+            <form id="school-form" onsubmit="handleSchoolSave(event)" class="space-y-3 text-xs">
+                <input type="hidden" id="school-form-id">
+                <div>
+                    <label class="block font-semibold mb-1">שם בית הספר *</label>
+                    <input type="text" id="school-name" required class="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block font-semibold mb-1">סמל מוסד *</label>
+                        <input type="text" id="school-symbol" required class="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500">
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">יישוב *</label>
+                        <input type="text" id="school-city" required class="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500">
+                    </div>
+                </div>
+
+                <hr class="my-3 border-slate-100">
+                <h4 class="font-bold text-slate-700 text-xs">אנשי קשר בבית הספר</h4>
+
+                <div class="grid grid-cols-3 gap-2">
+                    <div>
+                        <label class="block font-semibold mb-1">שם מנהל/ת</label>
+                        <input type="text" id="school-principal-name" class="w-full p-2 border border-slate-200 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">טלפון מנהל/ת</label>
+                        <input type="text" id="school-principal-phone" class="w-full p-2 border border-slate-200 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">דוא"ל מנהל/ת</label>
+                        <input type="email" id="school-principal-email" class="w-full p-2 border border-slate-200 rounded-lg">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2">
+                    <div>
+                        <label class="block font-semibold mb-1">שם רכז/ת פדגוגי/ת</label>
+                        <input type="text" id="school-coord-name" class="w-full p-2 border border-slate-200 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">טלפון רכז/ת</label>
+                        <input type="text" id="school-coord-phone" class="w-full p-2 border border-slate-200 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">דוא"ל רכז/ת</label>
+                        <input type="email" id="school-coord-email" class="w-full p-2 border border-slate-200 rounded-lg">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block font-semibold mb-1">הערות ודגשים מיוחדים למוסד</label>
+                    <textarea id="school-notes" rows="2" class="w-full p-2 border border-slate-200 rounded-lg"></textarea>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-4">
+                    <button type="button" onclick="closeSchoolModal()" class="px-4 py-2 bg-slate-100 text-slate-600 rounded-lg font-semibold">ביטול</button>
+                    <button type="submit" id="school-save-btn" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold shadow">שמור בענן</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Meeting -->
+    <div id="modal-meeting" onclick="closeModalOnOverlay(event, 'modal-meeting')" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4 no-print">
+        <div class="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                <h3 class="font-bold text-slate-800 text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-pen-to-square text-brand-600"></i> תיעוד מפגש הדרכה
+                </h3>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="generateAiSummaryForMeeting()" class="px-3 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg text-xs font-bold shadow flex items-center gap-1.5 hover:opacity-90">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> מחולל סיכום AI
+                    </button>
+                    <span id="autosave-status" class="text-xs text-teal-600 font-semibold bg-teal-50 px-2 py-1 rounded">✓ נשמר בענן</span>
+                </div>
+            </div>
+
+            <form id="meeting-form" onsubmit="handleMeetingSave(event)" class="space-y-3 text-xs">
+                <input type="hidden" id="meeting-id">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                        <label class="block font-semibold mb-1">כותרת / נושא המפגש *</label>
+                        <input type="text" id="meeting-title" required placeholder="לדוגמה: מפגש פדגוגי בנושא הערכה חלופית" class="w-full p-2 border border-slate-200 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">תאריך המפגש *</label>
+                        <input type="date" id="meeting-date" required class="w-full p-2 border border-slate-200 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">שעות הדרכה *</label>
+                        <input type="number" step="0.5" id="meeting-hours" required value="2" class="w-full p-2 border border-slate-200 rounded-lg">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">🏆 הישגים מרכזיים והצלחות</label>
+                        <textarea id="field-achievements" rows="2" placeholder="מה חודש, הושג או יושם בהצלחה?" class="w-full p-2 border border-slate-200 rounded-lg"></textarea>
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">🔄 תהליכים פדגוגיים שהתקיימו</label>
+                        <textarea id="field-processes" rows="2" placeholder="פירוט התהליך, המתודולוגיות והדיונים" class="w-full p-2 border border-slate-200 rounded-lg"></textarea>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">⚠️ אתגרים וחסמים שזוהו</label>
+                        <textarea id="field-challenges" rows="2" placeholder="קשיים, פערים או אתגרים שהועלו" class="w-full p-2 border border-slate-200 rounded-lg"></textarea>
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">🎯 יעדים והמלצות להמשך</label>
+                        <textarea id="field-recommendations" rows="2" placeholder="צעדים הבאים, משימות להמשך ומעקב" class="w-full p-2 border border-slate-200 rounded-lg"></textarea>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">📝 סיכום כללי והערות חופשיות</label>
+                    <textarea id="field-notes" rows="2" placeholder="סיכום נוסף במידת הצורך..." class="w-full p-2 border border-slate-200 rounded-lg"></textarea>
+                </div>
+
+                <!-- Attachment Section -->
+                <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <label class="block font-semibold text-slate-700 mb-1">📎 צירוף קובץ למפגש (מסמך / מצגת / תמונה)</label>
+                    <div class="flex items-center gap-2">
+                        <input type="file" id="field-file-input" onchange="handleMeetingFileUpload(event)" class="text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 border border-slate-200 rounded-lg w-full p-1 bg-white">
+                        <input type="hidden" id="field-attachment-url">
+                        <input type="hidden" id="field-attachment-name">
+                    </div>
+                    <span id="file-upload-status" class="text-[11px] text-teal-600 font-semibold mt-1 block"></span>
+                </div>
+
+                <div class="flex justify-between items-center pt-4 border-t border-slate-100">
+                    <button type="button" onclick="openEmailModalForMeeting()" class="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-lg text-xs flex items-center gap-1.5">
+                        <i class="fa-solid fa-paper-plane"></i> שלח סיכום בדוא"ל
+                    </button>
+                    <div class="flex gap-2">
+                        <button type="button" onclick="closeMeetingModal()" class="px-4 py-2 bg-slate-100 text-slate-600 rounded-lg font-semibold">סגור</button>
+                        <button type="submit" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold shadow">שמור בענן</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Email Summary -->
+    <div id="modal-email" onclick="closeModalOnOverlay(event, 'modal-email')" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4 no-print">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <h3 class="font-bold text-slate-800 text-lg mb-1 flex items-center gap-2">
+                <i class="fa-solid fa-envelope text-indigo-600"></i> שליחת סיכום מפגש בדוא"ל
+            </h3>
+            <p class="text-xs text-slate-500 mb-4">בחר כיצד לפתוח את חלון השליחה מתוך החשבון האישי שלך:</p>
+            <form id="email-form" onsubmit="handleSendEmail(event, 'default')" class="space-y-3 text-xs">
+                <div>
+                    <label class="block font-semibold mb-1">נמען (To) *</label>
+                    <input type="email" id="email-to" required placeholder="principal@school.org" class="w-full p-2 border border-slate-200 rounded-lg">
+                </div>
+                <div>
+                    <label class="block font-semibold mb-1">עותק (CC)</label>
+                    <input type="text" id="email-cc" placeholder="coordinator@school.org" class="w-full p-2 border border-slate-200 rounded-lg">
+                </div>
+                <div>
+                    <label class="block font-semibold mb-1">נושא ההודעה</label>
+                    <input type="text" id="email-subject" required class="w-full p-2 border border-slate-200 rounded-lg">
+                </div>
+                <div>
+                    <label class="block font-semibold mb-1">תוכן המכתב</label>
+                    <textarea id="email-body" rows="6" required class="w-full p-2 border border-slate-200 rounded-lg"></textarea>
+                </div>
+                <div class="flex flex-wrap justify-end gap-2 pt-2">
+                    <button type="button" onclick="closeEmailModal()" class="px-3 py-2 bg-slate-100 rounded-lg font-semibold">ביטול</button>
+                    <button type="button" onclick="handleSendEmail(event, 'gmail')" class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold shadow flex items-center gap-1.5">
+                        <i class="fa-brands fa-google text-xs"></i> פתח ב-Gmail Web
+                    </button>
+                    <button type="submit" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow flex items-center gap-1.5">
+                        <i class="fa-solid fa-paper-plane text-xs"></i> פתח בתוכנת המייל (Outlook)
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Task -->
+    <div id="modal-task" onclick="closeModalOnOverlay(event, 'modal-task')" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4 no-print">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <h3 class="font-bold text-slate-800 text-lg mb-4">+ משימה / תזכורת חדשה</h3>
+            <form id="task-form" onsubmit="handleTaskSave(event)" class="space-y-3 text-xs">
+                <input type="hidden" id="task-id">
+                <div>
+                    <label class="block font-semibold mb-1">שיוך לבית ספר *</label>
+                    <select id="task-school-id" required class="w-full p-2 border border-slate-200 rounded-lg">
+                        <!-- Populated dynamically -->
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-semibold mb-1">תיאור המשימה *</label>
+                    <input type="text" id="task-title" required placeholder="לדוגמה: שליחת חומרי עזר לרכזת" class="w-full p-2 border border-slate-200 rounded-lg">
+                </div>
+                <div>
+                    <label class="block font-semibold mb-1">תאריך יעד</label>
+                    <input type="date" id="task-due-date" class="w-full p-2 border border-slate-200 rounded-lg">
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" onclick="closeTaskModal()" class="px-4 py-2 bg-slate-100 rounded-lg font-semibold">ביטול</button>
+                    <button type="submit" class="px-4 py-2 bg-brand-600 text-white rounded-lg font-semibold shadow">שמור משימה</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Global API Endpoint Configuration
+        var API_BASE_URL = 'https://YOUR_API_ENDPOINT_HERE';
+
+        // App State
+        var currentAuthToken = localStorage.getItem('madrich_auth_token') || null;
+        var currentUser = null;
+        try {
+            currentUser = JSON.parse(localStorage.getItem('madrich_user_info') || 'null');
+        } catch(e) { currentUser = null; }
+
+        var appData = { schools: [], meetings: [], tasks: [], annualSummaries: [] };
+        var currentSchoolId = null;
+        var chartSchoolInstance = null;
+        var chartMonthInstance = null;
+
+        // UI Helpers
+        function showToast(message, type) {
+            type = type || 'success';
+            var container = document.getElementById('toast-container');
+            if (!container) return;
+            var toast = document.createElement('div');
+            var bgClass = type === 'error' ? 'bg-rose-600 text-white' : (type === 'info' ? 'bg-slate-800 text-white' : 'bg-teal-600 text-white');
+            toast.className = 'px-4 py-3 rounded-xl shadow-lg text-xs font-semibold flex items-center gap-2 transition-all duration-300 opacity-100 transform translate-y-0 ' + bgClass;
+            toast.innerHTML = (type === 'error' ? '<i class="fa-solid fa-circle-exclamation"></i>' : '<i class="fa-solid fa-circle-check"></i>') + '<span>' + message + '</span>';
+            container.appendChild(toast);
+            setTimeout(function() {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(function() { toast.remove(); }, 300);
+            }, 3500);
+        }
+
+        function closeModalOnOverlay(e, modalId) {
+            if (e.target.id === modalId) {
+                document.getElementById(modalId).classList.add('hidden');
+            }
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                ['modal-school', 'modal-meeting', 'modal-email', 'modal-task'].forEach(function(id) {
+                    var el = document.getElementById(id);
+                    if (el && !el.classList.contains('hidden')) el.classList.add('hidden');
+                });
             }
         });
 
-        if (!response.ok) {
-            throw new Error('שגיאה בטעינת הנתונים: ' + response.statusText);
+        function saveLocalMockData() {
+            try {
+                localStorage.setItem('madrich_mock_data', JSON.stringify(appData));
+            } catch(e) {}
         }
 
-        var res = await response.json();
-        
-        if (res && res.success) {
-            appData.schools = res.schools || [];
-            appData.meetings = res.meetings || appData.meetings;
-            appData.tasks = res.tasks || appData.tasks;
-            appData.annualSummaries = res.annualSummaries || appData.annualSummaries;
-            refreshAllViews();
-        } else {
-            showToast((res && res.message) ? res.message : 'שגיאה בקבלת בתי הספר', 'error');
+        document.addEventListener('DOMContentLoaded', function() {
+            if (currentAuthToken && currentUser) {
+                showAppUI();
+                loadCloudData();
+            } else {
+                showAuthUI();
+            }
+        });
+
+        function setAuthMode(mode) {
+            document.getElementById('field-full-name').classList.toggle('hidden', mode !== 'register');
+            document.getElementById('auth-tab-login').className = mode === 'login' ? 'flex-1 py-3 text-sm font-semibold text-brand-700 border-b-2 border-brand-600 bg-white' : 'flex-1 py-3 text-sm font-semibold text-slate-500 border-b-2 border-transparent';
+            document.getElementById('auth-tab-register').className = mode === 'register' ? 'flex-1 py-3 text-sm font-semibold text-brand-700 border-b-2 border-brand-600 bg-white' : 'flex-1 py-3 text-sm font-semibold text-slate-500 border-b-2 border-transparent';
+            document.getElementById('auth-submit-btn').querySelector('span').innerText = mode === 'login' ? 'כניסה למערכת' : 'הרשם וצור חשבון';
         }
-    } catch (err) {
-        console.warn("תקשורת שרת נכשלה, עובר למצב Local/Mock:", err);
-        
-        // נפילה מבוקרת לנתונים מקומיים (Mock Data) במידה ואין חיבור לשרת
-        var savedData = localStorage.getItem('madrich_mock_data');
-        if (savedData) {
-            try { appData = JSON.parse(savedData); } catch (e) {}
-        }
-        refreshAllViews();
-    }
-}
 
-/**
- * הוספה/עדכון של בית ספר בשרת (כתיבה - POST)
- */
-async function handleSchoolSave(e) {
-    if (e) e.preventDefault();
+        function handleAuthSubmit(e) {
+            if (e) e.preventDefault();
+            var email = document.getElementById('auth-email').value;
+            var password = document.getElementById('auth-password').value;
+            var fullName = document.getElementById('auth-name').value;
+            var isReg = !document.getElementById('field-full-name').classList.contains('hidden');
 
-    var schoolIdVal = document.getElementById('school-form-id').value;
-    var schoolData = {
-        id: schoolIdVal ? schoolIdVal : '',
-        name: document.getElementById('school-name').value,
-        symbol: document.getElementById('school-symbol').value,
-        city: document.getElementById('school-city').value,
-        principalName: document.getElementById('school-principal-name').value,
-        principalPhone: document.getElementById('school-principal-phone').value,
-        principalEmail: document.getElementById('school-principal-email').value,
-        coordinatorName: document.getElementById('school-coord-name').value,
-        coordinatorPhone: document.getElementById('school-coord-phone').value,
-        coordinatorEmail: document.getElementById('school-coord-email').value,
-        notes: document.getElementById('school-notes').value
-    };
+            var btn = document.getElementById('auth-submit-btn');
+            btn.disabled = true;
+            btn.classList.add('opacity-75');
 
-    var btn = document.getElementById('school-save-btn');
-    if (btn) {
-        btn.disabled = true;
-        btn.innerText = 'שומר...';
-    }
+            var callback = function(res) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-75');
 
-    // 1. עבודה בסביבת Google Apps Script
-    if (typeof google !== 'undefined' && google.script && google.script.run) {
-        google.script.run
-            .withSuccessHandler(function(res) {
-                if (btn) { btn.disabled = false; btn.innerText = 'שמור בענן'; }
                 if (res && res.success) {
-                    closeSchoolModal();
+                    currentAuthToken = res.token;
+                    currentUser = res.user;
+                    localStorage.setItem('madrich_auth_token', res.token);
+                    localStorage.setItem('madrich_user_info', JSON.stringify(res.user));
+                    showAppUI();
                     loadCloudData();
-                    showToast('פרטי בית הספר נשמרו בענן');
+                    showToast('התחברת בהצלחה!');
+                } else {
+                    displayAuthMessage((res && res.message) ? res.message : 'שגיאה בתהליך ההתחברות/הרשמה', 'error');
+                }
+            };
+
+            var errorHandler = function(err) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-75');
+                displayAuthMessage("שגיאת תקשורת עם השרת: " + (err.message || err), 'error');
+            };
+
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                if (isReg) {
+                    google.script.run.withSuccessHandler(callback).withFailureHandler(errorHandler).apiRegisterUser(email, password, fullName);
+                } else {
+                    google.script.run.withSuccessHandler(callback).withFailureHandler(errorHandler).apiLoginUser(email, password);
+                }
+            } else {
+                callback({ success: true, token: 'demo_token_' + Date.now(), user: { email: email, fullName: fullName || 'מדריך פדגוגי' } });
+            }
+        }
+
+        function displayAuthMessage(msg, type) {
+            type = type || 'info';
+            var el = document.getElementById('auth-message');
+            if (!el) return;
+            el.innerText = msg;
+            el.className = 'mb-4 p-3 rounded-lg text-xs font-medium ' + (type === 'error' ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-teal-50 text-teal-700 border border-teal-200');
+            el.classList.remove('hidden');
+        }
+
+        function handleSignOut() {
+            localStorage.removeItem('madrich_auth_token');
+            localStorage.removeItem('madrich_user_info');
+            currentAuthToken = null;
+            currentUser = null;
+            showAuthUI();
+            showToast('התנתקת מהמערכת', 'info');
+        }
+
+        function showAppUI() {
+            document.getElementById('auth-section').classList.add('hidden');
+            document.getElementById('main-header').classList.remove('hidden');
+            var nameToShow = (currentUser && currentUser.fullName) ? currentUser.fullName : ((currentUser && currentUser.email) ? currentUser.email : 'מחובר');
+            document.getElementById('user-display-email').innerText = nameToShow;
+            switchTab('schools');
+        }
+
+        function showAuthUI() {
+            document.getElementById('auth-section').classList.remove('hidden');
+            document.getElementById('main-header').classList.add('hidden');
+            var views = document.querySelectorAll('.view-content');
+            for (var i = 0; i < views.length; i++) { views[i].classList.add('hidden'); }
+        }
+
+        /* 1. טעינת בתי הספר - GET */
+        async function loadCloudData() {
+            // תמיכה ב-Google Apps Script במידה וקיים
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(function(res) {
+                    if (res && res.success) {
+                        appData = res.data || { schools: [], meetings: [], tasks: [], annualSummaries: [] };
+                        appData.schools = appData.schools || [];
+                        appData.meetings = appData.meetings || [];
+                        appData.tasks = appData.tasks || [];
+                        appData.annualSummaries = appData.annualSummaries || [];
+                        refreshAllViews();
+                    } else if (res && res.message) {
+                        showToast(res.message, 'error');
+                        handleSignOut();
+                    }
+                }).withFailureHandler(function(err) {
+                    showToast("שגיאה בטעינת הנתונים מהשרת: " + (err.message || err), 'error');
+                }).apiGetInstructorData(currentAuthToken);
+                return;
+            }
+
+            // עבודה מול שרת REST API חיצוני (GET Request)
+            try {
+                var response = await fetch(API_BASE_URL + '/api/schools', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + currentAuthToken
+                    }
+                });
+                if (!response.ok) { throw new Error('שגיאה בתקשורת מול השרת'); }
+                var res = await response.json();
+                if (res && res.success) {
+                    appData.schools = res.schools || res.data?.schools || appData.schools || [];
+                    appData.meetings = res.meetings || res.data?.meetings || appData.meetings || [];
+                    appData.tasks = res.tasks || res.data?.tasks || appData.tasks || [];
+                    appData.annualSummaries = res.annualSummaries || res.data?.annualSummaries || appData.annualSummaries || [];
+                    refreshAllViews();
+                } else {
+                    showToast((res && res.message) ? res.message : 'שגיאה בקבלת נתוני בית הספר', 'error');
+                }
+            } catch (err) {
+                console.warn("תקשורת שרת נכשלה, עובר למצב Local/Mock:", err);
+                var savedData = localStorage.getItem('madrich_mock_data');
+                if (savedData) {
+                    try { appData = JSON.parse(savedData); } catch (e) {}
+                }
+
+                if (!appData.schools || appData.schools.length === 0) {
+                    appData = {
+                        schools: [
+                            { id: 'sch_1', symbol: '123456', name: 'תיכון אורט השרון', city: 'כפר סבא', principalName: 'רונית לוי', principalEmail: 'ronit@ort.org', coordinatorName: 'אבי כהן' }
+                        ],
+                        meetings: [
+                            { id: 'mtg_1', schoolId: 'sch_1', title: 'מפגש 1: תכנון פדגוגי שנתי', date: '2026-09-01', hours: 3, achievements: 'גיבוש תוכנית עבודה', processes: 'דיון צוותי מעמיק', challenges: 'עומס במערכת', recommendations: 'מעקב בעוד שבועיים' }
+                        ],
+                        tasks: [
+                            { id: 'tsk_1', schoolId: 'sch_1', title: 'שליחת מערכי שיעור לרכזת', status: 'pending', dueDate: '2026-09-15' }
+                        ],
+                        annualSummaries: []
+                    };
+                    saveLocalMockData();
+                }
+                refreshAllViews();
+            }
+        }
+
+        function refreshAllViews() {
+            renderSchoolsList();
+            if (currentSchoolId) renderSchoolDetail(currentSchoolId);
+            renderTasksList();
+            renderDashboard();
+            renderReportPreview();
+        }
+
+        function switchTab(tabName) {
+            var views = document.querySelectorAll('.view-content');
+            for (var i = 0; i < views.length; i++) { views[i].classList.add('hidden'); }
+
+            var navBtns = document.querySelectorAll('.nav-btn');
+            for (var j = 0; j < navBtns.length; j++) {
+                navBtns[j].className = 'nav-btn px-3 py-1.5 rounded-lg text-sm font-medium transition-all text-slate-600 hover:text-slate-900';
+            }
+
+            var activeNav = document.getElementById('nav-' + tabName);
+            if (activeNav) {
+                activeNav.className = 'nav-btn px-3 py-1.5 rounded-lg text-sm font-medium transition-all text-brand-700 bg-white shadow-sm';
+            }
+
+            var target = document.getElementById('view-' + tabName);
+            if (target) target.classList.remove('hidden');
+
+            if (tabName === 'dashboard') renderDashboard();
+            if (tabName === 'reports') renderReportPreview();
+        }
+
+        function renderSchoolsList() {
+            var grid = document.getElementById('schools-grid');
+            if (!grid) return;
+
+            var searchInput = document.getElementById('schools-search');
+            var search = (searchInput ? searchInput.value : '').trim().toLowerCase();
+            
+            var schools = appData.schools || [];
+            var filtered = schools.filter(function(s) {
+                if (!s) return false;
+                var name = (s.name ? String(s.name) : '').toLowerCase();
+                var city = (s.city ? String(s.city) : '').toLowerCase();
+                var symbol = (s.symbol ? String(s.symbol) : '').toLowerCase();
+                return name.indexOf(search) !== -1 || city.indexOf(search) !== -1 || symbol.indexOf(search) !== -1;
+            });
+
+            if (filtered.length === 0) {
+                grid.innerHTML = '<div class="col-span-full text-center py-12 bg-white rounded-2xl border border-dashed border-slate-300 text-slate-400">' + (search ? 'לא נמצאו בתי ספר התואמים את החיפוש.' : 'טרם נמצאו בתי ספר. לחץ על "הוסף בית ספר" כדי להתחיל.') + '</div>';
+                return;
+            }
+
+            grid.innerHTML = filtered.map(function(s) {
+                var schoolId = s.id || '';
+                var name = s.name || 'ללא שם';
+                var city = s.city || '';
+                var symbol = s.symbol || '-';
+                var principalName = s.principalName || '';
+
+                var meetings = appData.meetings || [];
+                var schoolMeetings = meetings.filter(function(m) { return m && String(m.schoolId) === String(schoolId); });
+                var meetingCount = schoolMeetings.length;
+                var totalHours = schoolMeetings.reduce(function(acc, curr) { return acc + (parseFloat(curr.hours) || 0); }, 0);
+
+                return '<div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">' +
+                    '<div>' +
+                        '<div class="flex items-center justify-between">' +
+                            '<span class="text-xs font-mono bg-teal-50 text-teal-700 px-2.5 py-0.5 rounded-full font-semibold">סמל: ' + symbol + '</span>' +
+                            '<span class="text-xs text-slate-400"><i class="fa-solid fa-location-dot ml-1"></i>' + city + '</span>' +
+                        '</div>' +
+                        '<h3 class="text-lg font-bold text-slate-800 mt-3">' + name + '</h3>' +
+                        (principalName ? '<p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-user-tie ml-1"></i>מנהל/ת: ' + principalName + '</p>' : '') +
+                        '<div class="flex items-center gap-4 mt-4 pt-3 border-t border-slate-100 text-xs text-slate-600">' +
+                            '<div><strong class="text-slate-800">' + meetingCount + '</strong> מפגשים</div>' +
+                            '<div><strong class="text-slate-800">' + totalHours + '</strong> שעות הדרכה</div>' +
+                        '</div>' +
+                    '</div>' +
+                    '<button onclick="openSchoolDetail(\'' + schoolId + '\')" class="mt-5 w-full py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold shadow transition-all">פתח תיק בית ספר</button>' +
+                '</div>';
+            }).join('');
+        }
+
+        function openSchoolDetail(id) {
+            currentSchoolId = id;
+            renderSchoolDetail(id);
+            switchTab('school-detail');
+        }
+
+        function renderSchoolDetail(id) {
+            var school = appData.schools.find(function(s) { return String(s.id) === String(id); });
+            if (!school) return;
+
+            document.getElementById('detail-school-name').innerText = school.name || '';
+            document.getElementById('detail-school-location').innerText = 'יישוב: ' + (school.city || '') + ' | סמל מוסד: ' + (school.symbol || '');
+
+            var badgesContainer = document.getElementById('school-contacts-badges');
+            var badges = '';
+            if (school.principalName) badges += '<span class="bg-white/10 px-2.5 py-1 rounded-lg">מנהל/ת: ' + school.principalName + '</span>';
+            if (school.coordinatorName) badges += '<span class="bg-white/10 px-2.5 py-1 rounded-lg">רכז/ת: ' + school.coordinatorName + '</span>';
+            badgesContainer.innerHTML = badges;
+
+            var annualSummaries = appData.annualSummaries || [];
+            var existingAnnual = annualSummaries.find(function(a) { return String(a.schoolId) === String(id); });
+            if (existingAnnual) {
+                populateAnnualSummaryForm(existingAnnual);
+                document.getElementById('annual-id').value = existingAnnual.id || '';
+            } else {
+                document.getElementById('annual-id').value = '';
+                document.getElementById('annual-summary-form').reset();
+            }
+
+            var container = document.getElementById('meetings-list-container');
+            var meetings = appData.meetings.filter(function(m) { return String(m.schoolId) === String(id); }).sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+
+            if (meetings.length === 0) {
+                container.innerHTML = '<div class="text-center py-10 bg-white rounded-xl border border-dashed border-slate-200 text-slate-400">עדיין לא תועדו מפגשים לבית ספר זה.</div>';
+                return;
+            }
+
+            container.innerHTML = meetings.map(function(m) {
+                var hasDetails = m.achievements || m.processes || m.challenges || m.recommendations || m.notes;
+
+                return '<details class="bg-white rounded-xl border border-slate-200 shadow-sm transition-all hover:border-slate-300 group">' +
+                    '<summary class="flex flex-wrap items-center justify-between gap-2 p-4 cursor-pointer select-none">' +
+                        '<div class="flex items-center gap-3">' +
+                            '<i class="fa-solid fa-chevron-down text-slate-400 group-open:rotate-180 transition-transform text-xs"></i>' +
+                            '<div>' +
+                                '<h4 class="font-bold text-base text-slate-900">' + m.title + '</h4>' +
+                                '<span class="text-xs text-slate-400"><i class="fa-regular fa-calendar ml-1"></i>' + m.date + ' | ' + m.hours + ' שעות הדרכה</span>' +
+                            '</div>' +
+                        '</div>' +
+                        '<div class="flex flex-wrap items-center gap-1.5 no-print" onclick="event.stopPropagation()">' +
+                            '<button onclick="openEmailModalForMeetingById(\'' + m.id + '\')" class="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-semibold flex items-center gap-1"><i class="fa-solid fa-paper-plane text-xs"></i> שליחת סיכום במייל</button>' +
+                            (m.attachmentUrl ? '<a href="' + m.attachmentUrl + '" target="_blank" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1"><i class="fa-solid fa-paperclip"></i> ' + (m.attachmentName || 'קובץ מצורף') + '</a>' : '') +
+                            '<button onclick="editMeeting(\'' + m.id + '\')" class="px-2.5 py-1 text-slate-600 hover:bg-slate-100 rounded-lg text-xs font-semibold"><i class="fa-solid fa-pen"></i> ערוך</button>' +
+                            '<button onclick="confirmDeleteMeeting(\'' + m.id + '\')" class="px-2.5 py-1 text-rose-600 hover:bg-rose-50 rounded-lg text-xs font-semibold"><i class="fa-solid fa-trash"></i> מחק</button>' +
+                        '</div>' +
+                    '</summary>' +
+                    '<div class="p-4 pt-2 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-slate-700">' +
+                        (m.achievements ? '<div class="bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-100"><strong class="text-emerald-800 block mb-0.5">🏆 הישגים:</strong>' + m.achievements + '</div>' : '') +
+                        (m.processes ? '<div class="bg-blue-50/50 p-2.5 rounded-lg border border-blue-100"><strong class="text-blue-800 block mb-0.5">🔄 תהליכים:</strong>' + m.processes + '</div>' : '') +
+                        (m.challenges ? '<div class="bg-amber-50/50 p-2.5 rounded-lg border border-amber-100"><strong class="text-amber-800 block mb-0.5">⚠️ אתגרים:</strong>' + m.challenges + '</div>' : '') +
+                        (m.recommendations ? '<div class="bg-indigo-50/50 p-2.5 rounded-lg border border-indigo-100"><strong class="text-indigo-800 block mb-0.5">🎯 המלצות ויעדים:</strong>' + m.recommendations + '</div>' : '') +
+                        (m.notes ? '<div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200 md:col-span-2"><strong class="text-slate-800 block mb-0.5">📝 הערות וסיכום כללי:</strong>' + m.notes + '</div>' : '') +
+                        (!hasDetails ? '<div class="col-span-2 text-slate-400 italic">אין פרטים נוספים למפגש זה.</div>' : '') +
+                    '</div>' +
+                '</details>';
+            }).join('');
+        }
+
+        function populateAnnualSummaryForm(data) {
+            document.getElementById('annual-achievements').value = data.achievements || '';
+            document.getElementById('annual-processes').value = data.processes || '';
+            document.getElementById('annual-strengths').value = data.strengths || '';
+            document.getElementById('annual-challenges').value = data.challenges || '';
+            document.getElementById('annual-needs').value = data.needs || '';
+            document.getElementById('annual-topics').value = data.topics || '';
+            document.getElementById('annual-next-topics').value = data.nextTopics || '';
+            document.getElementById('annual-goals').value = data.goals || '';
+            document.getElementById('annual-recommendations').value = data.recommendations || '';
+        }
+
+        function generateAnnualAiSummary(e) {
+            if (!currentSchoolId) return;
+
+            var btn = e ? e.currentTarget : null;
+            var origText = btn ? btn.innerHTML : '';
+            if (btn) {
+                btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin ml-1"></i> מפיק סיכום AI...';
+                btn.disabled = true;
+            }
+
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(function(res) {
+                    if (btn) { btn.innerHTML = origText; btn.disabled = false; }
+                    if (res && res.success && res.data) {
+                        populateAnnualSummaryForm(res.data);
+                        showToast('סיכום הדרכה שנתי הופק בהצלחה על ידי הבינה המלאכותית!');
+                    } else {
+                        showToast(res?.message || "שגיאה ביצירת סיכום AI", 'error');
+                    }
+                }).apiGenerateAnnualAiSummary(currentAuthToken, currentSchoolId);
+            } else {
+                setTimeout(function() {
+                    if (btn) { btn.innerHTML = origText; btn.disabled = false; }
+                    populateAnnualSummaryForm({
+                        achievements: "• יושמה בהצלחה תוכנית הדרכה שנתית מותאמת לצרכי בית הספר.\n• הושג שיפור ניכר בשיתוף הפעולה הכלל-צוותי.",
+                        processes: "• התקיימו מפגשי ליווי פדגוגי אישיים וסדנאות צוותיות קבועות.\n• הוטמעו כלי הוראה והערכה מתקדמים.",
+                        strengths: "• פתיחות גבוהה של הצוות החינוכי והנהלת המוסד ללמידה ושינוי.\n• מחויבות רבה של הרכזת הפדגוגית.",
+                        challenges: "• עומס משימות ואתגרי לו\"ז במהלך שנת הלימודים.",
+                        needs: "• מענה דיפרנציאלי והדרכות ממוקדות למורים חדשים.\n• הרחבת מכסת שעות ההדרכה הפרטנית.",
+                        topics: "• תכנון לימודי שנתי, הערכה חלופית, פיתוח מיומנויות הוראה ופדגוגיה חדשנית.",
+                        nextTopics: "• העמקת כלי הוראה מותאמים אישית והטמעת טכנולוגיות בלמידה.",
+                        goals: "• הרחבת השימוש בכלים הפדגוגיים שנלמדו לכלל צוות המורים בבית הספר.",
+                        recommendations: "• קביעת מפגשי מעקב תקופתיים קבועים מראש בתחילת שנת הלימודים הבאה."
+                    });
+                    showToast('סיכום הדגמה הופק בהצלחה!');
+                }, 600);
+            }
+        }
+
+        function saveAnnualSummary() {
+            if (!currentSchoolId) return;
+
+            var summaryData = {
+                id: document.getElementById('annual-id').value || '',
+                schoolId: currentSchoolId,
+                year: new Date().getFullYear().toString(),
+                achievements: document.getElementById('annual-achievements').value,
+                processes: document.getElementById('annual-processes').value,
+                strengths: document.getElementById('annual-strengths').value,
+                challenges: document.getElementById('annual-challenges').value,
+                needs: document.getElementById('annual-needs').value,
+                topics: document.getElementById('annual-topics').value,
+                nextTopics: document.getElementById('annual-next-topics').value,
+                goals: document.getElementById('annual-goals').value,
+                recommendations: document.getElementById('annual-recommendations').value
+            };
+
+            var btn = document.getElementById('btn-save-annual');
+            if (btn) { btn.disabled = true; btn.innerText = "שומר..."; }
+
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(function(res) {
+                    if (btn) { btn.disabled = false; btn.innerText = "שמור סיכום שנתי"; }
+                    if (res && res.success) {
+                        showToast("סיכום ההדרכה השנתי נשמר בהצלחה בענן!");
+                        loadCloudData();
+                    } else {
+                        showToast(res?.message || "שגיאה בשמירה", 'error');
+                    }
+                }).apiSaveAnnualSummary(currentAuthToken, summaryData);
+            } else {
+                if (!appData.annualSummaries) appData.annualSummaries = [];
+                if (!summaryData.id) summaryData.id = 'ann_' + Date.now();
+                var idx = appData.annualSummaries.findIndex(function(a) { return String(a.schoolId) === String(currentSchoolId); });
+                if (idx >= 0) appData.annualSummaries[idx] = summaryData;
+                else appData.annualSummaries.push(summaryData);
+
+                saveLocalMockData();
+                if (btn) { btn.disabled = false; btn.innerText = "שמור סיכום שנתי"; }
+                showToast("סיכום שנתי נשמר במצב הדגמה מקומי");
+            }
+        }
+
+        function openEmailModalForMeetingById(meetingId) {
+            var meeting = appData.meetings.find(function(m) { return String(m.id) === String(meetingId); });
+            if (!meeting) return;
+
+            currentSchoolId = meeting.schoolId;
+            document.getElementById('meeting-title').value = meeting.title || '';
+            document.getElementById('meeting-date').value = meeting.date || '';
+            document.getElementById('field-achievements').value = meeting.achievements || '';
+            document.getElementById('field-processes').value = meeting.processes || '';
+            document.getElementById('field-recommendations').value = meeting.recommendations || '';
+            document.getElementById('field-notes').value = meeting.notes || '';
+
+            openEmailModalForMeeting();
+        }
+
+        function handleMeetingFileUpload(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+
+            var statusEl = document.getElementById('file-upload-status');
+            statusEl.innerText = "מעלה קובץ ל-Google Drive...";
+
+            var reader = new FileReader();
+            reader.onload = function(evt) {
+                var fileData = {
+                    name: file.name,
+                    mimeType: file.type,
+                    base64: evt.target.result
+                };
+
+                if (typeof google !== 'undefined' && google.script && google.script.run) {
+                    google.script.run.withSuccessHandler(function(res) {
+                        if (res && res.success) {
+                            document.getElementById('field-attachment-url').value = res.fileUrl;
+                            document.getElementById('field-attachment-name').value = res.fileName;
+                            statusEl.innerText = "✓ הקובץ הועלה בהצלחה: " + res.fileName;
+                            showToast('הקובץ הועלה בהצלחה');
+                        } else {
+                            statusEl.innerText = "❌ שגיאה בהעלאת הקובץ";
+                            showToast(res?.message || "שגיאה בהעלאה", 'error');
+                        }
+                    }).apiUploadFile(currentAuthToken, fileData);
+                } else {
+                    document.getElementById('field-attachment-url').value = "https://drive.google.com";
+                    document.getElementById('field-attachment-name').value = file.name;
+                    statusEl.innerText = "✓ [מצב הדגמה] קובץ צורף: " + file.name;
+                    showToast('קובץ צורף במצב הדגמה');
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function openSchoolModal() {
+            document.getElementById('school-form-id').value = '';
+            document.getElementById('school-form').reset();
+            document.getElementById('modal-school-title').innerText = '+ הוספת בית ספר';
+            document.getElementById('modal-school').classList.remove('hidden');
+        }
+
+        function editCurrentSchool() {
+            var school = appData.schools.find(function(s) { return String(s.id) === String(currentSchoolId); });
+            if (!school) return;
+
+            document.getElementById('school-form-id').value = school.id;
+            document.getElementById('school-name').value = school.name || '';
+            document.getElementById('school-symbol').value = school.symbol || '';
+            document.getElementById('school-city').value = school.city || '';
+            document.getElementById('school-principal-name').value = school.principalName || '';
+            document.getElementById('school-principal-phone').value = school.principalPhone || '';
+            document.getElementById('school-principal-email').value = school.principalEmail || '';
+            document.getElementById('school-coord-name').value = school.coordinatorName || '';
+            document.getElementById('school-coord-phone').value = school.coordinatorPhone || '';
+            document.getElementById('school-coord-email').value = school.coordinatorEmail || '';
+            document.getElementById('school-notes').value = school.notes || '';
+
+            document.getElementById('modal-school-title').innerText = 'עריכת פרטי בית ספר';
+            document.getElementById('modal-school').classList.remove('hidden');
+        }
+
+        function closeSchoolModal() {
+            document.getElementById('modal-school').classList.add('hidden');
+        }
+
+        /* 2. פונקציית הוספת / עדכון בית ספר - POST */
+        async function handleSchoolSave(e) {
+            if (e) e.preventDefault();
+            var schoolIdVal = document.getElementById('school-form-id').value;
+            var schoolData = {
+                id: schoolIdVal ? schoolIdVal : '',
+                name: document.getElementById('school-name').value,
+                symbol: document.getElementById('school-symbol').value,
+                city: document.getElementById('school-city').value,
+                principalName: document.getElementById('school-principal-name').value,
+                principalPhone: document.getElementById('school-principal-phone').value,
+                principalEmail: document.getElementById('school-principal-email').value,
+                coordinatorName: document.getElementById('school-coord-name').value,
+                coordinatorPhone: document.getElementById('school-coord-phone').value,
+                coordinatorEmail: document.getElementById('school-coord-email').value,
+                notes: document.getElementById('school-notes').value
+            };
+
+            var btn = document.getElementById('school-save-btn');
+            if (btn) { btn.disabled = true; btn.innerText = 'שומר...'; }
+
+            // תמיכה ב-Google Apps Script במידה וקיים
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run
+                    .withSuccessHandler(function(res) {
+                        if (btn) { btn.disabled = false; btn.innerText = 'שמור בענן'; }
+                        if (res && res.success) {
+                            closeSchoolModal();
+                            loadCloudData();
+                            showToast('פרטי בית הספר נשמרו בענן');
+                        } else {
+                            showToast((res && res.message) ? res.message : 'שגיאה בשמירת בית הספר', 'error');
+                        }
+                    })
+                    .withFailureHandler(function(err) {
+                        if (btn) { btn.disabled = false; btn.innerText = 'שמור בענן'; }
+                        showToast('שגיאת תקשורת עם השרת: ' + (err.message || err), 'error');
+                    })
+                    .apiSaveSchool(currentAuthToken, schoolData);
+                return;
+            }
+
+            // עבודה מול שרת REST API (POST Request)
+            try {
+                var response = await fetch(API_BASE_URL + '/api/schools', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + currentAuthToken
+                    },
+                    body: JSON.stringify(schoolData)
+                });
+                var res = await response.json();
+                if (response.ok && res.success) {
+                    closeSchoolModal();
+                    await loadCloudData();
+                    showToast('בית הספר נשמר בהצלחה!');
                 } else {
                     showToast((res && res.message) ? res.message : 'שגיאה בשמירת בית הספר', 'error');
                 }
-            })
-            .withFailureHandler(function(err) {
+            } catch (err) {
+                console.warn("תקשורת שרת נכשלה, עובר למצב Local/Mock:", err);
+                if (!appData.schools) appData.schools = [];
+                if (!schoolData.id) schoolData.id = 'sch_' + Date.now();
+                var index = appData.schools.findIndex(function(s) { return String(s.id) === String(schoolData.id); });
+                if (index >= 0) appData.schools[index] = schoolData;
+                else appData.schools.push(schoolData);
+                saveLocalMockData();
+                closeSchoolModal();
+                refreshAllViews();
+                showToast('בית הספר נשמר במצב מקומי');
+            } finally {
                 if (btn) { btn.disabled = false; btn.innerText = 'שמור בענן'; }
-                showToast('שגיאת תקשורת עם השרת: ' + (err.message || err), 'error');
-            })
-            .apiSaveSchool(currentAuthToken, schoolData);
-        return;
-    }
-
-    // 2. עבודה מול שרת REST API חיצוני (POST Request)
-    try {
-        var response = await fetch(API_BASE_URL + '/api/schools', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + currentAuthToken
-            },
-            body: JSON.stringify(schoolData)
-        });
-
-        var res = await response.json();
-
-        if (response.ok && res.success) {
-            closeSchoolModal();
-            await loadCloudData();
-            showToast('בית הספר נשמר בהצלחה');
-        } else {
-            showToast((res && res.message) ? res.message : 'שגיאה בשמירת בית הספר', 'error');
+            }
         }
-    } catch (err) {
-        showToast('שגיאת תקשורת עם השרת: ' + (err.message || err), 'error');
 
-        // גיבוי מקומי במידה ואין חיבור לשרת REST
-        if (!appData.schools) appData.schools = [];
-        if (!schoolData.id) schoolData.id = 'sch_' + Date.now();
-        
-        var index = appData.schools.findIndex(function(s) { return String(s.id) === String(schoolData.id); });
-        if (index >= 0) {
-            appData.schools[index] = schoolData;
-        } else {
-            appData.schools.push(schoolData);
+        function confirmDeleteSchool() {
+            if (!confirm("האם אתה בטוח שברצונך למחוק בית ספר זה? פעולה זו תמחק גם את המפגשים, המשימות והסיכומים השנתיים המשוייכים.")) return;
+
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(function(res) {
+                    if (res && res.success) {
+                        switchTab('schools');
+                        loadCloudData();
+                        showToast('בית הספר נמחק בהצלחה');
+                    } else {
+                        showToast(res?.message || 'שגיאה במחיקה', 'error');
+                    }
+                }).apiDeleteSchool(currentAuthToken, currentSchoolId);
+            } else {
+                appData.schools = appData.schools.filter(function(s) { return String(s.id) !== String(currentSchoolId); });
+                appData.meetings = appData.meetings.filter(function(m) { return String(m.schoolId) !== String(currentSchoolId); });
+                appData.tasks = appData.tasks.filter(function(t) { return String(t.schoolId) !== String(currentSchoolId); });
+                appData.annualSummaries = appData.annualSummaries.filter(function(a) { return String(a.schoolId) !== String(currentSchoolId); });
+                saveLocalMockData();
+                switchTab('schools');
+                refreshAllViews();
+                showToast('בית הספר נמחק');
+            }
         }
-        
-        saveLocalMockData();
-        closeSchoolModal();
-        refreshAllViews();
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.innerText = 'שמור בענן';
+
+        function openMeetingModal() {
+            document.getElementById('meeting-id').value = '';
+            document.getElementById('meeting-form').reset();
+            document.getElementById('field-attachment-url').value = '';
+            document.getElementById('field-attachment-name').value = '';
+            document.getElementById('file-upload-status').innerText = '';
+            document.getElementById('meeting-date').value = new Date().toISOString().split('T')[0];
+            document.getElementById('modal-meeting').classList.remove('hidden');
         }
-    }
-}
+
+        function editMeeting(id) {
+            var meeting = appData.meetings.find(function(m) { return String(m.id) === String(id); });
+            if (!meeting) return;
+
+            document.getElementById('meeting-id').value = meeting.id;
+            document.getElementById('meeting-title').value = meeting.title || '';
+            document.getElementById('meeting-date').value = meeting.date || '';
+            document.getElementById('meeting-hours').value = meeting.hours || 2;
+            document.getElementById('field-achievements').value = meeting.achievements || '';
+            document.getElementById('field-processes').value = meeting.processes || '';
+            document.getElementById('field-challenges').value = meeting.challenges || '';
+            document.getElementById('field-recommendations').value = meeting.recommendations || '';
+            document.getElementById('field-notes').value = meeting.notes || '';
+            document.getElementById('field-attachment-url').value = meeting.attachmentUrl || '';
+            document.getElementById('field-attachment-name').value = meeting.attachmentName || '';
+            document.getElementById('file-upload-status').innerText = meeting.attachmentName ? "✓ קובץ צורף: " + meeting.attachmentName : '';
+
+            document.getElementById('modal-meeting').classList.remove('hidden');
+        }
+
+        function closeMeetingModal() {
+            document.getElementById('modal-meeting').classList.add('hidden');
+        }
+
+        function handleMeetingSave(e) {
+            if (e) e.preventDefault();
+            var meetingIdVal = document.getElementById('meeting-id').value;
+            var meetingData = {
+                id: meetingIdVal ? meetingIdVal : '',
+                schoolId: currentSchoolId,
+                title: document.getElementById('meeting-title').value,
+                date: document.getElementById('meeting-date').value,
+                hours: parseFloat(document.getElementById('meeting-hours').value) || 0,
+                achievements: document.getElementById('field-achievements').value,
+                processes: document.getElementById('field-processes').value,
+                challenges: document.getElementById('field-challenges').value,
+                recommendations: document.getElementById('field-recommendations').value,
+                notes: document.getElementById('field-notes').value,
+                attachmentUrl: document.getElementById('field-attachment-url').value,
+                attachmentName: document.getElementById('field-attachment-name').value
+            };
+
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(function(res) {
+                    if (res && res.success) {
+                        closeMeetingModal();
+                        loadCloudData();
+                        showToast('המפגש נשמר בהצלחה בענן');
+                    } else {
+                        showToast(res?.message || 'שגיאה בשמירת מפגש', 'error');
+                    }
+                }).apiSaveMeeting(currentAuthToken, meetingData);
+            } else {
+                if (!meetingData.id) meetingData.id = 'mtg_' + Date.now();
+                var index = appData.meetings.findIndex(function(m) { return String(m.id) === String(meetingData.id); });
+                if (index >= 0) appData.meetings[index] = meetingData;
+                else appData.meetings.push(meetingData);
+                saveLocalMockData();
+                closeMeetingModal();
+                refreshAllViews();
+                showToast('המפגש נשמר בהצלחה');
+            }
+        }
+
+        function confirmDeleteMeeting(id) {
+            if (!confirm("האם למחוק מפגש זה?")) return;
+
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(function(res) {
+                    if (res && res.success) {
+                        loadCloudData();
+                        showToast('המפגש נמחק');
+                    } else {
+                        showToast(res?.message || 'שגיאה במחיקת מפגש', 'error');
+                    }
+                }).apiDeleteMeeting(currentAuthToken, id);
+            } else {
+                appData.meetings = appData.meetings.filter(function(m) { return String(m.id) !== String(id); });
+                saveLocalMockData();
+                refreshAllViews();
+                showToast('המפגש נמחק');
+            }
+        }
+
+        function generateAiSummaryForMeeting() {
+            var title = document.getElementById('meeting-title').value || 'מפגש הדרכה';
+            var achievements = document.getElementById('field-achievements').value;
+            var processes = document.getElementById('field-processes').value;
+
+            var prompt = 'פעל כיועץ פדגוגי בכיר. נסח סיכום פדגוגי מקצועי, הישגים והמלצות להמשך עבור מפגש הדרכה בשם "' + title + '". דגשים קיימים: הישגים: ' + achievements + ', תהליכים: ' + processes + '.';
+
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(function(res) {
+                    if (res && res.success && res.summary) {
+                        document.getElementById('field-notes').value = res.summary;
+                        showToast('סיכום AI נוסח בהצלחה');
+                    }
+                }).apiGenerateAiSummary(currentAuthToken, prompt);
+            } else {
+                document.getElementById('field-notes').value = "סיכום פדגוגי מומלץ (AI):\n- המפגש התקיים בהצלחה תוך מיקוד במטרות ההדרכה.\n- הושג שיתוף פעולה מלא מצד צוות בית הספר.\n- המלצה: לבצע מעקב בעוד שבועיים.";
+                showToast('סיכום AI נוצר במצב הדגמה');
+            }
+        }
+
+        function openEmailModalForMeeting() {
+            var school = appData.schools.find(function(s) { return String(s.id) === String(currentSchoolId); });
+            var title = document.getElementById('meeting-title').value || 'מפגש הדרכה';
+            var date = document.getElementById('meeting-date').value || '';
+
+            document.getElementById('email-to').value = (school && school.principalEmail) ? school.principalEmail : ((school && school.coordinatorEmail) ? school.coordinatorEmail : '');
+            document.getElementById('email-cc').value = (school && school.coordinatorEmail && school.principalEmail) ? school.coordinatorEmail : '';
+            document.getElementById('email-subject').value = 'סיכום מפגש הדרכה פדגוגי - ' + ((school && school.name) ? school.name : '') + ' (' + date + ')';
+
+            var achievements = document.getElementById('field-achievements').value;
+            var processes = document.getElementById('field-processes').value;
+            var recommendations = document.getElementById('field-recommendations').value;
+            var notes = document.getElementById('field-notes').value;
+
+            var bodyText = 'שלום רב,\n\nלהלן סיכום מפגש הדרכה בנושא: ' + title + ' שנערך בתאריך ' + date + '.\n\n';
+            if (achievements) bodyText += '🏆 הישגים:\n' + achievements + '\n\n';
+            if (processes) bodyText += '🔄 תהליכים:\n' + processes + '\n\n';
+            if (recommendations) bodyText += '🎯 המלצות ויעדים:\n' + recommendations + '\n\n';
+            if (notes) bodyText += '📝 הערות:\n' + notes + '\n\n';
+            bodyText += 'בברכה,\n' + ((currentUser && currentUser.fullName) ? currentUser.fullName : 'מדריך/ה פדגוגי/ת');
+
+            document.getElementById('email-body').value = bodyText;
+            document.getElementById('modal-email').classList.remove('hidden');
+        }
+
+        function closeEmailModal() {
+            document.getElementById('modal-email').classList.add('hidden');
+        }
+
+        function handleSendEmail(e, serviceType) {
+            serviceType = serviceType || 'default';
+            if (e) e.preventDefault();
+            var to = document.getElementById('email-to').value;
+            var cc = document.getElementById('email-cc').value;
+            var subject = document.getElementById('email-subject').value;
+            var body = document.getElementById('email-body').value;
+
+            if (serviceType === 'gmail') {
+                var gmailUrl = 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(to) + '&su=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+                if (cc) gmailUrl += '&cc=' + encodeURIComponent(cc);
+                window.open(gmailUrl, '_blank');
+            } else {
+                var mailtoUrl = 'mailto:' + encodeURIComponent(to) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+                if (cc) mailtoUrl += '&cc=' + encodeURIComponent(cc);
+                
+                var tempLink = document.createElement('a');
+                tempLink.href = mailtoUrl;
+                tempLink.target = '_blank';
+                document.body.appendChild(tempLink);
+                tempLink.click();
+                document.body.removeChild(tempLink);
+            }
+
+            closeEmailModal();
+            showToast('חלון הדוא"ל נפתח בהצלחה');
+        }
+
+        function openTaskModal() {
+            var select = document.getElementById('task-school-id');
+            select.innerHTML = appData.schools.map(function(s) { return '<option value="' + s.id + '">' + s.name + '</option>'; }).join('');
+            if (currentSchoolId) select.value = currentSchoolId;
+
+            document.getElementById('task-id').value = '';
+            document.getElementById('task-form').reset();
+            document.getElementById('modal-task').classList.remove('hidden');
+        }
+
+        function closeTaskModal() {
+            document.getElementById('modal-task').classList.add('hidden');
+        }
+
+        function handleTaskSave(e) {
+            if (e) e.preventDefault();
+            var taskIdVal = document.getElementById('task-id').value;
+            var taskData = {
+                id: taskIdVal ? taskIdVal : '',
+                schoolId: document.getElementById('task-school-id').value,
+                title: document.getElementById('task-title').value,
+                dueDate: document.getElementById('task-due-date').value,
+                status: 'pending'
+            };
+
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(function(res) {
+                    if (res && res.success) {
+                        closeTaskModal();
+                        loadCloudData();
+                        showToast('המשימה נשמרה בהצלחה');
+                    } else {
+                        showToast(res?.message || 'שגיאה בשמירת משימה', 'error');
+                    }
+                }).apiSaveTask(currentAuthToken, taskData);
+            } else {
+                if (!taskData.id) taskData.id = 'tsk_' + Date.now();
+                appData.tasks.push(taskData);
+                saveLocalMockData();
+                closeTaskModal();
+                refreshAllViews();
+                showToast('המשימה נוצרה');
+            }
+        }
+
+        function toggleTaskStatus(taskId) {
+            var task = appData.tasks.find(function(t) { return String(t.id) === String(taskId); });
+            if (!task) return;
+            task.status = task.status === 'completed' ? 'pending' : 'completed';
+
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(function(res) {
+                    if (res && res.success) {
+                        loadCloudData();
+                    } else {
+                        showToast(res?.message || 'שגיאה בעדכון משימה', 'error');
+                    }
+                }).apiSaveTask(currentAuthToken, task);
+            } else {
+                saveLocalMockData();
+                refreshAllViews();
+            }
+        }
+
+        function deleteTask(taskId) {
+            if (!confirm('האם אתה בטוח שברצונך למחוק משימה זו?')) return;
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(function(res) {
+                    if (res && res.success) {
+                        loadCloudData();
+                        showToast('המשימה נמחקה');
+                    } else {
+                        showToast(res?.message || 'שגיאה במחיקת המשימה', 'error');
+                    }
+                }).apiDeleteTask(currentAuthToken, taskId);
+            } else {
+                appData.tasks = appData.tasks.filter(function(t) { return String(t.id) !== String(taskId); });
+                saveLocalMockData();
+                refreshAllViews();
+                showToast('המשימה נמחקה');
+            }
+        }
+
+        function renderTasksList() {
+            var container = document.getElementById('tasks-list-container');
+            if (!appData.tasks || appData.tasks.length === 0) {
+                container.innerHTML = '<div class="p-8 text-center text-slate-400">אין משימות פתוחות. כותבים משימה חדשה בלחיצה למעלה.</div>';
+                return;
+            }
+
+            container.innerHTML = appData.tasks.map(function(t) {
+                var school = appData.schools.find(function(s) { return String(s.id) === String(t.schoolId); });
+                var isDone = t.status === 'completed';
+
+                return '<div class="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">' +
+                    '<div class="flex items-center gap-3">' +
+                        '<button onclick="toggleTaskStatus(\'' + t.id + '\')" class="w-5 h-5 rounded border ' + (isDone ? 'bg-teal-600 border-teal-600 text-white' : 'border-slate-300') + ' flex items-center justify-center text-xs">' +
+                            (isDone ? '<i class="fa-solid fa-check"></i>' : '') +
+                        '</button>' +
+                        '<div>' +
+                            '<p class="text-sm font-semibold ' + (isDone ? 'line-through text-slate-400' : 'text-slate-800') + '">' + t.title + '</p>' +
+                            '<span class="text-xs text-slate-400">' + (school ? school.name : '') + (t.dueDate ? ' | יעד: ' + t.dueDate : '') + '</span>' +
+                        '</div>' +
+                    '</div>' +
+                    '<button onclick="deleteTask(\'' + t.id + '\')" class="text-xs text-slate-400 hover:text-rose-600 p-1.5 transition-colors">' +
+                        '<i class="fa-solid fa-trash"></i>' +
+                    '</button>' +
+                '</div>';
+            }).join('');
+        }
+
+        function renderDashboard() {
+            document.getElementById('stat-total-schools').innerText = appData.schools.length;
+            document.getElementById('stat-total-meetings').innerText = appData.meetings.length;
+
+            var totalHours = appData.meetings.reduce(function(acc, curr) { return acc + (parseFloat(curr.hours) || 0); }, 0);
+            document.getElementById('stat-total-hours').innerText = totalHours;
+
+            var openTasks = appData.tasks.filter(function(t) { return t.status !== 'completed'; }).length;
+            document.getElementById('stat-open-tasks').innerText = openTasks;
+
+            if (typeof Chart === 'undefined') return;
+
+            var schoolNames = appData.schools.map(function(s) { return s.name; });
+            var schoolHours = appData.schools.map(function(s) {
+                return appData.meetings.filter(function(m) { return String(m.schoolId) === String(s.id); }).reduce(function(acc, curr) { return acc + (parseFloat(curr.hours) || 0); }, 0);
+            });
+
+            var ctxSchool = document.getElementById('chart-hours-school').getContext('2d');
+            if (chartSchoolInstance) chartSchoolInstance.destroy();
+            chartSchoolInstance = new Chart(ctxSchool, {
+                type: 'bar',
+                data: {
+                    labels: schoolNames,
+                    datasets: [{
+                        label: 'שעות הדרכה',
+                        data: schoolHours,
+                        backgroundColor: '#14b8a6',
+                        borderRadius: 8
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+
+            var monthsMap = {};
+            appData.meetings.forEach(function(m) {
+                var month = m.date ? m.date.substring(0, 7) : 'כללי';
+                monthsMap[month] = (monthsMap[month] || 0) + 1;
+            });
+
+            var ctxMonth = document.getElementById('chart-meetings-month').getContext('2d');
+            if (chartMonthInstance) chartMonthInstance.destroy();
+            chartMonthInstance = new Chart(ctxMonth, {
+                type: 'line',
+                data: {
+                    labels: Object.keys(monthsMap),
+                    datasets: [{
+                        label: 'מספר מפגשים',
+                        data: Object.values(monthsMap),
+                        borderColor: '#0d9488',
+                        tension: 0.3,
+                        fill: false
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        function renderReportPreview() {
+            var selectSchool = document.getElementById('report-filter-school');
+            if (selectSchool) {
+                selectSchool.innerHTML = '<option value="all">כל בתי הספר</option>' + appData.schools.map(function(s) { return '<option value="' + s.id + '">' + s.name + '</option>'; }).join('');
+            }
+
+            var schoolFilter = document.getElementById('report-filter-school') ? document.getElementById('report-filter-school').value : 'all';
+            var sortOrder = document.getElementById('report-filter-sort') ? document.getElementById('report-filter-sort').value : 'desc';
+
+            var filteredMeetings = appData.meetings.slice();
+            if (schoolFilter !== 'all') {
+                filteredMeetings = filteredMeetings.filter(function(m) { return String(m.schoolId) === String(schoolFilter); });
+            }
+
+            filteredMeetings.sort(function(a, b) {
+                return sortOrder === 'desc' ? new Date(b.date) - new Date(a.date) : new Date(a.date) - new Date(b.date);
+            });
+
+            var container = document.getElementById('report-print-container');
+            var instructorName = (currentUser && currentUser.fullName) ? currentUser.fullName : 'מדריך/ה פדגוגי/ת';
+
+            container.innerHTML = '<div class="border-b-2 border-slate-900 pb-4 mb-6 flex justify-between items-center">' +
+                '<div>' +
+                    '<h1 class="text-2xl font-bold text-slate-900">דוח הדרכה פדגוגי מרוכז</h1>' +
+                    '<p class="text-xs text-slate-600 mt-1">מדריך/ה: ' + instructorName + ' | תאריך הפקה: ' + new Date().toLocaleDateString('he-IL') + '</p>' +
+                '</div>' +
+                '<div class="text-left text-xs text-slate-500">' +
+                    '<div>סה"כ מפגשים בדוח: <strong>' + filteredMeetings.length + '</strong></div>' +
+                    '<div>סה"כ שעות: <strong>' + filteredMeetings.reduce(function(acc, c) { return acc + (parseFloat(c.hours) || 0); }, 0) + '</strong></div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="space-y-6">' +
+                filteredMeetings.map(function(m) {
+                    var school = appData.schools.find(function(s) { return String(s.id) === String(m.schoolId); });
+                    return '<div class="border-b border-slate-200 pb-4">' +
+                        '<div class="flex justify-between items-center mb-1">' +
+                            '<h3 class="font-bold text-sm text-slate-800">' + m.title + ' - ' + (school ? school.name : '') + '</h3>' +
+                            '<span class="text-xs text-slate-500">' + m.date + ' (' + m.hours + ' שעות)</span>' +
+                        '</div>' +
+                        '<div class="grid grid-cols-2 gap-2 text-xs text-slate-700 mt-2">' +
+                            (m.achievements ? '<div><strong>הישגים:</strong> ' + m.achievements + '</div>' : '') +
+                            (m.processes ? '<div><strong>תהליכים:</strong> ' + m.processes + '</div>' : '') +
+                            (m.recommendations ? '<div class="col-span-2"><strong>המלצות ויעדים:</strong> ' + m.recommendations + '</div>' : '') +
+                        '</div>' +
+                    '</div>';
+                }).join('') +
+            '</div>';
+        }
+    </script>
+</body>
+</html>
