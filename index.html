@@ -598,7 +598,6 @@
 
     <script>
         // Global API Endpoint Configuration
-        // יש להחליף את YOUR_DEPLOYMENT_ID במזהה ה-Deployment הרשמי מ-Apps Script
         var API_BASE_URL = 'https://script.google.com/macros/s/AKfycbxY9ZV9Yn84KhkjHDb_WxF1m3IokAAAcV0RmylHvJD-iw-1qDrP5L8NkcbDeweARpA08g/exec';
 
         // App State
@@ -776,32 +775,26 @@
                 if (!response.ok) { throw new Error('שגיאה בתקשורת מול השרת'); }
                 var res = await response.json();
                 if (res && res.success) {
-                    appData.schools = res.schools || res.data?.schools || appData.schools || [];
-                    appData.meetings = res.meetings || res.data?.meetings || appData.meetings || [];
-                    appData.tasks = res.tasks || res.data?.tasks || appData.tasks || [];
-                    appData.annualSummaries = res.annualSummaries || res.data?.annualSummaries || appData.annualSummaries || [];
+                    appData.schools = res.schools || res.data?.schools || [];
+                    appData.meetings = res.meetings || res.data?.meetings || [];
+                    appData.tasks = res.tasks || res.data?.tasks || [];
+                    appData.annualSummaries = res.annualSummaries || res.data?.annualSummaries || [];
                     refreshAllViews();
                 } else {
                     showToast((res && res.message) ? res.message : 'שגיאה בקבלת נתוני בית הספר', 'error');
                 }
             } catch (err) {
-                console.warn("תקשורת שרת נכשלה, עובר למצב Local/Mock:", err);
+                console.warn("תקשורת שרת נכשלה, עובר למצב Local:", err);
                 var savedData = localStorage.getItem('madrich_mock_data');
                 if (savedData) {
                     try { appData = JSON.parse(savedData); } catch (e) {}
                 }
 
-                if (!appData.schools || appData.schools.length === 0) {
+                if (!appData.schools) {
                     appData = {
-                        schools: [
-                            { id: 'sch_1', symbol: '123456', name: 'תיכון אורט השרון', city: 'כפר סבא', principalName: 'רונית לוי', principalEmail: 'ronit@ort.org', coordinatorName: 'אבי כהן' }
-                        ],
-                        meetings: [
-                            { id: 'mtg_1', schoolId: 'sch_1', title: 'מפגש 1: תכנון פדגוגי שנתי', date: '2026-09-01', hours: 3, achievements: 'גיבוש תוכנית עבודה', processes: 'דיון צוותי מעמיק', challenges: 'עומס במערכת', recommendations: 'מעקב בעוד שבועיים' }
-                        ],
-                        tasks: [
-                            { id: 'tsk_1', schoolId: 'sch_1', title: 'שליחת מערכי שיעור לרכזת', status: 'pending', dueDate: '2026-09-15' }
-                        ],
+                        schools: [],
+                        meetings: [],
+                        tasks: [],
                         annualSummaries: []
                     };
                     saveLocalMockData();
@@ -1062,6 +1055,7 @@
             document.getElementById('meeting-date').value = meeting.date || '';
             document.getElementById('field-achievements').value = meeting.achievements || '';
             document.getElementById('field-processes').value = meeting.processes || '';
+            document.getElementById('field-challenges').value = meeting.challenges || '';
             document.getElementById('field-recommendations').value = meeting.recommendations || '';
             document.getElementById('field-notes').value = meeting.notes || '';
 
@@ -1362,14 +1356,17 @@
 
             var achievements = document.getElementById('field-achievements').value;
             var processes = document.getElementById('field-processes').value;
+            var challenges = document.getElementById('field-challenges').value;
             var recommendations = document.getElementById('field-recommendations').value;
             var notes = document.getElementById('field-notes').value;
 
             var bodyText = 'שלום רב,\n\nלהלן סיכום מפגש הדרכה בנושא: ' + title + ' שנערך בתאריך ' + date + '.\n\n';
-            if (achievements) bodyText += '🏆 הישגים:\n' + achievements + '\n\n';
-            if (processes) bodyText += '🔄 תהליכים:\n' + processes + '\n\n';
-            if (recommendations) bodyText += '🎯 המלצות ויעדים:\n' + recommendations + '\n\n';
-            if (notes) bodyText += '📝 הערות:\n' + notes + '\n\n';
+            if (achievements) bodyText += '🏆 הישגים מרכזיים והצלחות:\n' + achievements + '\n\n';
+            if (processes) bodyText += '🔄 תהליכים פדגוגיים שהתקיימו:\n' + processes + '\n\n';
+            if (challenges) bodyText += '⚠️ אתגרים וחסמים שזוהו:\n' + challenges + '\n\n';
+            if (recommendations) bodyText += '🎯 יעדים והמלצות להמשך:\n' + recommendations + '\n\n';
+            if (notes) bodyText += '📝 סיכום כללי והערות:\n' + notes + '\n\n';
+
             bodyText += 'בברכה,\n' + ((currentUser && currentUser.fullName) ? currentUser.fullName : 'מדריך/ה פדגוגי/ת');
 
             document.getElementById('email-body').value = bodyText;
