@@ -558,7 +558,7 @@
                 <div class="flex flex-wrap justify-end gap-2 pt-2">
                     <button type="button" onclick="closeEmailModal()" class="px-3 py-2 bg-slate-100 rounded-lg font-semibold">ביטול</button>
                     <button type="button" onclick="handleSendEmail(event, 'gmail')" class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold shadow flex items-center gap-1.5">
-                        <i class="fa-brands fa-google text-xs"></i> פתח ב-Gmail Web
+                        <i class="fa-brands fa-google text-xs"></i> צור טיוטה ב-Gmail
                     </button>
                     <button type="submit" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow flex items-center gap-1.5">
                         <i class="fa-solid fa-paper-plane text-xs"></i> פתח בתוכנת המייל (Outlook)
@@ -597,10 +597,8 @@
     </div>
 
     <script>
-        // Global API Endpoint Configuration
         var API_BASE_URL = 'https://script.google.com/macros/s/AKfycbxY9ZV9Yn84KhkjHDb_WxF1m3IokAAAcV0RmylHvJD-iw-1qDrP5L8NkcbDeweARpA08g/exec';
 
-        // App State
         var currentAuthToken = localStorage.getItem('madrich_auth_token') || null;
         var currentUser = null;
         try {
@@ -612,7 +610,11 @@
         var chartSchoolInstance = null;
         var chartMonthInstance = null;
 
-        // UI Helpers
+        function getUserStorageKey() {
+            var email = (currentUser && currentUser.email) ? currentUser.email.toLowerCase().trim() : 'guest';
+            return 'madrich_data_' + email;
+        }
+
         function showToast(message, type) {
             type = type || 'success';
             var container = document.getElementById('toast-container');
@@ -645,7 +647,9 @@
 
         function saveLocalMockData() {
             try {
-                localStorage.setItem('madrich_mock_data', JSON.stringify(appData));
+                if (currentUser && currentUser.email) {
+                    localStorage.setItem(getUserStorageKey(), JSON.stringify(appData));
+                }
             } catch(e) {}
         }
 
@@ -676,14 +680,24 @@
             btn.disabled = true;
             btn.classList.add('opacity-75');
 
-            // איפוס מונע של נתוני זיכרון קודמים לפני טעינת המשתמש החדש
             appData = { schools: [], meetings: [], tasks: [], annualSummaries: [] };
             currentSchoolId = null;
 
-            var callback = function(res) {
+            var payload = {
+                action: isReg ? 'register' : 'login',
+                email: email,
+                password: password,
+                fullName: fullName
+            };
+
+            fetch(API_BASE_URL, {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(res) {
                 btn.disabled = false;
                 btn.classList.remove('opacity-75');
-
                 if (res && res.success) {
                     currentAuthToken = res.token;
                     currentUser = res.user;
@@ -695,23 +709,12 @@
                 } else {
                     displayAuthMessage((res && res.message) ? res.message : 'שגיאה בתהליך ההתחברות/הרשמה', 'error');
                 }
-            };
-
-            var errorHandler = function(err) {
+            })
+            .catch(function(err) {
                 btn.disabled = false;
                 btn.classList.remove('opacity-75');
                 displayAuthMessage("שגיאת תקשורת עם השרת: " + (err.message || err), 'error');
-            };
-
-            if (typeof google !== 'undefined' && google.script && google.script.run) {
-                if (isReg) {
-                    google.script.run.withSuccessHandler(callback).withFailureHandler(errorHandler).apiRegisterUser(email, password, fullName);
-                } else {
-                    google.script.run.withSuccessHandler(callback).withFailureHandler(errorHandler).apiLoginUser(email, password);
-                }
-            } else {
-                callback({ success: true, token: 'demo_token_' + Date.now(), user: { email: email, fullName: fullName || 'מדריך פדגוגי' } });
-            }
+            });
         }
 
         function displayAuthMessage(msg, type) {
@@ -724,24 +727,22 @@
         }
 
         function handleSignOut() {
-            // 1. מחיקת כל הנתונים והטוקנים מ-localStorage
+            if (currentUser && currentUser.email) {
+                localStorage.removeItem(getUserStorageKey());
+            }
             localStorage.removeItem('madrich_auth_token');
             localStorage.removeItem('madrich_user_info');
-            localStorage.removeItem('madrich_mock_data');
             
-            // 2. איפוס מלא של משתני הזיכרון הגלובליים
             currentAuthToken = null;
             currentUser = null;
             currentSchoolId = null;
             appData = { schools: [], meetings: [], tasks: [], annualSummaries: [] };
 
-            // 3. איפוס שדות הטופס במסך ההתחברות
             var emailInput = document.getElementById('auth-email');
             var passwordInput = document.getElementById('auth-password');
             if (emailInput) emailInput.value = '';
             if (passwordInput) passwordInput.value = '';
 
-            // 4. העברה למסך התחברות
             showAuthUI();
             showToast('התנתקת מהמערכת בהצלחה', 'info');
         }
@@ -761,61 +762,34 @@
             for (var i = 0; i < views.length; i++) { views[i].classList.add('hidden'); }
         }
 
-        /* 1. טעינת בתי הספר - GET */
         async function loadCloudData() {
-            if (typeof google !== 'undefined' && google.script && google.script.run) {
-                google.script.run.withSuccessHandler(function(res) {
-                    if (res && res.success) {
-                        appData = res.data || { schools: [], meetings: [], tasks: [], annualSummaries: [] };
-                        appData.schools = appData.schools || [];
-                        appData.meetings = appData.meetings || [];
-                        appData.tasks = appData.tasks || [];
-                        appData.annualSummaries = appData.annualSummaries || [];
-                        refreshAllViews();
-                    } else if (res && res.message) {
-                        showToast(res.message, 'error');
-                        handleSignOut();
-                    }
-                }).withFailureHandler(function(err) {
-                    showToast("שגיאה בטעינת הנתונים מהשרת: " + (err.message || err), 'error');
-                }).apiGetInstructorData(currentAuthToken);
-                return;
-            }
+            if (!currentUser || !currentUser.email) return;
+
+            appData = { schools: [], meetings: [], tasks: [], annualSummaries: [] };
 
             try {
-                var response = await fetch(API_BASE_URL + '/api/schools', {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer ' + currentAuthToken
-                    }
+                var response = await fetch(API_BASE_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'getInstructorData', token: currentAuthToken })
                 });
                 if (!response.ok) { throw new Error('שגיאה בתקשורת מול השרת'); }
                 var res = await response.json();
                 if (res && res.success) {
-                    appData.schools = res.schools || res.data?.schools || [];
-                    appData.meetings = res.meetings || res.data?.meetings || [];
-                    appData.tasks = res.tasks || res.data?.tasks || [];
-                    appData.annualSummaries = res.annualSummaries || res.data?.annualSummaries || [];
+                    var cloudData = res.data || res;
+                    appData.schools = cloudData.schools || [];
+                    appData.meetings = cloudData.meetings || [];
+                    appData.tasks = cloudData.tasks || [];
+                    appData.annualSummaries = cloudData.annualSummaries || [];
+                    saveLocalMockData();
                     refreshAllViews();
                 } else {
-                    showToast((res && res.message) ? res.message : 'שגיאה בקבלת נתוני בית הספר', 'error');
+                    showToast((res && res.message) ? res.message : 'שגיאה בקבלת הנתונים', 'error');
                 }
             } catch (err) {
-                console.warn("תקשורת שרת נכשלה, עובר למצב Local:", err);
-                var savedData = localStorage.getItem('madrich_mock_data');
+                console.warn("תקשורת שרת נכשלה, עובר למצב זיכרון מקומי מבודד:", err);
+                var savedData = localStorage.getItem(getUserStorageKey());
                 if (savedData) {
                     try { appData = JSON.parse(savedData); } catch (e) {}
-                }
-
-                if (!appData.schools) {
-                    appData = {
-                        schools: [],
-                        meetings: [],
-                        tasks: [],
-                        annualSummaries: []
-                    };
-                    saveLocalMockData();
                 }
                 refreshAllViews();
             }
@@ -991,33 +965,24 @@
                 btn.disabled = true;
             }
 
-            if (typeof google !== 'undefined' && google.script && google.script.run) {
-                google.script.run.withSuccessHandler(function(res) {
-                    if (btn) { btn.innerHTML = origText; btn.disabled = false; }
-                    if (res && res.success && res.data) {
-                        populateAnnualSummaryForm(res.data);
-                        showToast('סיכום הדרכה שנתי הופק בהצלחה על ידי הבינה המלאכותית!');
-                    } else {
-                        showToast((res && res.message) || "שגיאה ביצירת סיכום AI", 'error');
-                    }
-                }).apiGenerateAnnualAiSummary(currentAuthToken, currentSchoolId);
-            } else {
-                setTimeout(function() {
-                    if (btn) { btn.innerHTML = origText; btn.disabled = false; }
-                    populateAnnualSummaryForm({
-                        achievements: "• יושמה בהצלחה תוכנית הדרכה שנתית מותאמת לצרכי בית הספר.\n• הושג שיפור ניכר בשיתוף הפעולה הכלל-צוותי.",
-                        processes: "• התקיימו מפגשי ליווי פדגוגי אישיים וסדנאות צוותיות קבועות.\n• הוטמעו כלי הוראה והערכה מתקדמים.",
-                        strengths: "• פתיחות גבוהה של הצוות החינוכי והנהלת המוסד ללמידה ושינוי.\n• מחויבות רבה של הרכזת הפדגוגית.",
-                        challenges: "• עומס משימות ואתגרי לו\"ז במהלך שנת הלימודים.",
-                        needs: "• מענה דיפרנציאלי והדרכות ממוקדות למורים חדשים.\n• הרחבת מכסת שעות ההדרכה הפרטנית.",
-                        topics: "• תכנון לימודי שנתי, הערכה חלופית, פיתוח מיומנויות הוראה ופדגוגיה חדשנית.",
-                        nextTopics: "• העמקת כלי הוראה מותאמים אישית והטמעת טכנולוגיות בלמידה.",
-                        goals: "• הרחבת השימוש בכלים הפדגוגיים שנלמדו לכלל צוות המורים בבית הספר.",
-                        recommendations: "• קביעת מפגשי מעקב תקופתיים קבועים מראש בתחילת שנת הלימודים הבאה."
-                    });
-                    showToast('סיכום הדגמה הופק בהצלחה!');
-                }, 600);
-            }
+            fetch(API_BASE_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'generateAnnualAiSummary', token: currentAuthToken, schoolId: currentSchoolId })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(res) {
+                if (btn) { btn.innerHTML = origText; btn.disabled = false; }
+                if (res && res.success && res.data) {
+                    populateAnnualSummaryForm(res.data);
+                    showToast('סיכום הדרכה שנתי הופק בהצלחה על ידי הבינה המלאכותית!');
+                } else {
+                    showToast((res && res.message) || "שגיאה ביצירת סיכום AI", 'error');
+                }
+            })
+            .catch(function(err) {
+                if (btn) { btn.innerHTML = origText; btn.disabled = false; }
+                showToast("שגיאת תקשורת בהפקת סיכום AI", 'error');
+            });
         }
 
         function saveAnnualSummary() {
@@ -1041,27 +1006,24 @@
             var btn = document.getElementById('btn-save-annual');
             if (btn) { btn.disabled = true; btn.innerText = "שומר..."; }
 
-            if (typeof google !== 'undefined' && google.script && google.script.run) {
-                google.script.run.withSuccessHandler(function(res) {
-                    if (btn) { btn.disabled = false; btn.innerText = "שמור סיכום שנתי"; }
-                    if (res && res.success) {
-                        showToast("סיכום ההדרכה השנתי נשמר בהצלחה בענן!");
-                        loadCloudData();
-                    } else {
-                        showToast((res && res.message) || "שגיאה בשמירה", 'error');
-                    }
-                }).apiSaveAnnualSummary(currentAuthToken, summaryData);
-            } else {
-                if (!appData.annualSummaries) appData.annualSummaries = [];
-                if (!summaryData.id) summaryData.id = 'ann_' + Date.now();
-                var idx = appData.annualSummaries.findIndex(function(a) { return String(a.schoolId) === String(currentSchoolId); });
-                if (idx >= 0) appData.annualSummaries[idx] = summaryData;
-                else appData.annualSummaries.push(summaryData);
-
-                saveLocalMockData();
+            fetch(API_BASE_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'saveAnnualSummary', token: currentAuthToken, summaryData: summaryData })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(res) {
                 if (btn) { btn.disabled = false; btn.innerText = "שמור סיכום שנתי"; }
-                showToast("סיכום שנתי נשמר במצב הדגמה מקומי");
-            }
+                if (res && res.success) {
+                    showToast("סיכום ההדרכה השנתי נשמר בהצלחה בענן!");
+                    loadCloudData();
+                } else {
+                    showToast((res && res.message) || "שגיאה בשמירה", 'error');
+                }
+            })
+            .catch(function(err) {
+                if (btn) { btn.disabled = false; btn.innerText = "שמור סיכום שנתי"; }
+                showToast("שגיאה בתקשורת עם השרת", 'error');
+            });
         }
 
         function openEmailModalForMeetingById(meetingId) {
@@ -1095,24 +1057,25 @@
                     base64: evt.target.result
                 };
 
-                if (typeof google !== 'undefined' && google.script && google.script.run) {
-                    google.script.run.withSuccessHandler(function(res) {
-                        if (res && res.success) {
-                            document.getElementById('field-attachment-url').value = res.fileUrl;
-                            document.getElementById('field-attachment-name').value = res.fileName;
-                            statusEl.innerText = "✓ הקובץ הועלה בהצלחה: " + res.fileName;
-                            showToast('הקובץ הועלה בהצלחה');
-                        } else {
-                            statusEl.innerText = "❌ שגיאה בהעלאת הקובץ";
-                            showToast((res && res.message) || "שגיאה בהעלאה", 'error');
-                        }
-                    }).apiUploadFile(currentAuthToken, fileData);
-                } else {
-                    document.getElementById('field-attachment-url').value = "https://drive.google.com";
-                    document.getElementById('field-attachment-name').value = file.name;
-                    statusEl.innerText = "✓ [מצב הדגמה] קובץ צורף: " + file.name;
-                    showToast('קובץ צורף במצב הדגמה');
-                }
+                fetch(API_BASE_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'uploadFile', token: currentAuthToken, fileData: fileData })
+                })
+                .then(function(res) { return res.json(); })
+                .then(function(res) {
+                    if (res && res.success) {
+                        document.getElementById('field-attachment-url').value = res.fileUrl;
+                        document.getElementById('field-attachment-name').value = res.fileName;
+                        statusEl.innerText = "✓ הקובץ הועלה בהצלחה: " + res.fileName;
+                        showToast('הקובץ הועלה בהצלחה');
+                    } else {
+                        statusEl.innerText = "❌ שגיאה בהעלאת הקובץ";
+                        showToast((res && res.message) || "שגיאה בהעלאה", 'error');
+                    }
+                })
+                .catch(function() {
+                    statusEl.innerText = "❌ שגיאת תקשורת בהעלאת הקובץ";
+                });
             };
             reader.readAsDataURL(file);
         }
@@ -1148,7 +1111,6 @@
             document.getElementById('modal-school').classList.add('hidden');
         }
 
-        /* 2. פונקציית הוספת / עדכון בית ספר - POST */
         async function handleSchoolSave(e) {
             if (e) e.preventDefault();
             var schoolIdVal = document.getElementById('school-form-id').value;
@@ -1169,34 +1131,14 @@
             var btn = document.getElementById('school-save-btn');
             if (btn) { btn.disabled = true; btn.innerText = 'שומר...'; }
 
-            if (typeof google !== 'undefined' && google.script && google.script.run) {
-                google.script.run
-                    .withSuccessHandler(function(res) {
-                        if (btn) { btn.disabled = false; btn.innerText = 'שמור בענן'; }
-                        if (res && res.success) {
-                            closeSchoolModal();
-                            loadCloudData();
-                            showToast('פרטי בית הספר נשמרו בענן');
-                        } else {
-                            showToast((res && res.message) ? res.message : 'שגיאה בשמירת בית הספר', 'error');
-                        }
-                    })
-                    .withFailureHandler(function(err) {
-                        if (btn) { btn.disabled = false; btn.innerText = 'שמור בענן'; }
-                        showToast('שגיאת תקשורת עם השרת: ' + (err.message || err), 'error');
-                    })
-                    .apiSaveSchool(currentAuthToken, schoolData);
-                return;
-            }
-
             try {
-                var response = await fetch(API_BASE_URL + '/api/schools', {
+                var response = await fetch(API_BASE_URL, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer ' + currentAuthToken
-                    },
-                    body: JSON.stringify(schoolData)
+                    body: JSON.stringify({
+                        action: 'saveSchool',
+                        token: currentAuthToken,
+                        schoolData: schoolData
+                    })
                 });
                 var res = await response.json();
                 if (response.ok && res.success) {
@@ -1207,7 +1149,7 @@
                     showToast((res && res.message) ? res.message : 'שגיאה בשמירת בית הספר', 'error');
                 }
             } catch (err) {
-                console.warn("תקשורת שרת נכשלה, עובר למצב Local/Mock:", err);
+                console.warn("תקשורת שרת נכשלה, עובר למצב מקומי:", err);
                 if (!appData.schools) appData.schools = [];
                 if (!schoolData.id) schoolData.id = 'sch_' + Date.now();
                 var index = appData.schools.findIndex(function(s) { return String(s.id) === String(schoolData.id); });
@@ -1225,26 +1167,20 @@
         function confirmDeleteSchool() {
             if (!confirm("האם אתה בטוח שברצונך למחוק בית ספר זה? פעולה זו תמחק גם את המפגשים, המשימות והסיכומים השנתיים המשוייכים.")) return;
 
-            if (typeof google !== 'undefined' && google.script && google.script.run) {
-                google.script.run.withSuccessHandler(function(res) {
-                    if (res && res.success) {
-                        switchTab('schools');
-                        loadCloudData();
-                        showToast('בית הספר נמחק בהצלחה');
-                    } else {
-                        showToast((res && res.message) || 'שגיאה במחיקה', 'error');
-                    }
-                }).apiDeleteSchool(currentAuthToken, currentSchoolId);
-            } else {
-                appData.schools = appData.schools.filter(function(s) { return String(s.id) !== String(currentSchoolId); });
-                appData.meetings = appData.meetings.filter(function(m) { return String(m.schoolId) !== String(currentSchoolId); });
-                appData.tasks = appData.tasks.filter(function(t) { return String(t.schoolId) !== String(currentSchoolId); });
-                appData.annualSummaries = appData.annualSummaries.filter(function(a) { return String(a.schoolId) !== String(currentSchoolId); });
-                saveLocalMockData();
-                switchTab('schools');
-                refreshAllViews();
-                showToast('בית הספר נמחק');
-            }
+            fetch(API_BASE_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'deleteSchool', token: currentAuthToken, schoolId: currentSchoolId })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(res) {
+                if (res && res.success) {
+                    switchTab('schools');
+                    loadCloudData();
+                    showToast('בית הספר נמחק בהצלחה');
+                } else {
+                    showToast((res && res.message) || 'שגיאה במחיקה', 'error');
+                }
+            });
         }
 
         function openMeetingModal() {
@@ -1299,46 +1235,38 @@
                 attachmentName: document.getElementById('field-attachment-name').value
             };
 
-            if (typeof google !== 'undefined' && google.script && google.script.run) {
-                google.script.run.withSuccessHandler(function(res) {
-                    if (res && res.success) {
-                        closeMeetingModal();
-                        loadCloudData();
-                        showToast('המפגש נשמר בהצלחה בענן');
-                    } else {
-                        showToast((res && res.message) || 'שגיאה בשמירת מפגש', 'error');
-                    }
-                }).apiSaveMeeting(currentAuthToken, meetingData);
-            } else {
-                if (!meetingData.id) meetingData.id = 'mtg_' + Date.now();
-                var index = appData.meetings.findIndex(function(m) { return String(m.id) === String(meetingData.id); });
-                if (index >= 0) appData.meetings[index] = meetingData;
-                else appData.meetings.push(meetingData);
-                saveLocalMockData();
-                closeMeetingModal();
-                refreshAllViews();
-                showToast('המפגש נשמר בהצלחה');
-            }
+            fetch(API_BASE_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'saveMeeting', token: currentAuthToken, meetingData: meetingData })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(res) {
+                if (res && res.success) {
+                    closeMeetingModal();
+                    loadCloudData();
+                    showToast('המפגש נשמר בהצלחה בענן');
+                } else {
+                    showToast((res && res.message) || 'שגיאה בשמירת מפגש', 'error');
+                }
+            });
         }
 
         function confirmDeleteMeeting(id) {
             if (!confirm("האם למחוק מפגש זה?")) return;
 
-            if (typeof google !== 'undefined' && google.script && google.script.run) {
-                google.script.run.withSuccessHandler(function(res) {
-                    if (res && res.success) {
-                        loadCloudData();
-                        showToast('המפגש נמחק');
-                    } else {
-                        showToast((res && res.message) || 'שגיאה במחיקת מפגש', 'error');
-                    }
-                }).apiDeleteMeeting(currentAuthToken, id);
-            } else {
-                appData.meetings = appData.meetings.filter(function(m) { return String(m.id) !== String(id); });
-                saveLocalMockData();
-                refreshAllViews();
-                showToast('המפגש נמחק');
-            }
+            fetch(API_BASE_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'deleteMeeting', token: currentAuthToken, meetingId: id })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(res) {
+                if (res && res.success) {
+                    loadCloudData();
+                    showToast('המפגש נמחק');
+                } else {
+                    showToast((res && res.message) || 'שגיאה במחיקת מפגש', 'error');
+                }
+            });
         }
 
         function generateAiSummaryForMeeting() {
@@ -1348,19 +1276,19 @@
 
             var prompt = 'פעל כיועץ פדגוגי בכיר. נסח סיכום פדגוגי מקצועי, הישגים והמלצות להמשך עבור מפגש הדרכה בשם "' + title + '". דגשים קיימים: הישגים: ' + achievements + ', תהליכים: ' + processes + '.';
 
-            if (typeof google !== 'undefined' && google.script && google.script.run) {
-                google.script.run.withSuccessHandler(function(res) {
-                    if (res && res.success && res.summary) {
-                        document.getElementById('field-notes').value = res.summary;
-                        showToast('סיכום AI נוסח בהצלחה');
-                    } else {
-                        showToast((res && res.message) || 'שגיאה בהפקת סיכום AI', 'error');
-                    }
-                }).apiGenerateAiSummary(currentAuthToken, prompt);
-            } else {
-                document.getElementById('field-notes').value = "סיכום פדגוגי מומלץ (AI):\n- המפגש התקיים בהצלחה תוך מיקוד במטרות ההדרכה.\n- הושג שיתוף פעולה מלא מצד צוות בית הספר.\n- המלצה: לבצע מעקב בעוד שבועיים.";
-                showToast('סיכום AI נוצר במצב הדגמה');
-            }
+            fetch(API_BASE_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'generateAiSummary', token: currentAuthToken, promptText: prompt })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(res) {
+                if (res && res.success && res.summary) {
+                    document.getElementById('field-notes').value = res.summary;
+                    showToast('סיכום AI נוסח בהצלחה');
+                } else {
+                    showToast((res && res.message) || 'שגיאה בהפקת סיכום AI', 'error');
+                }
+            });
         }
 
         function openEmailModalForMeeting() {
@@ -1406,24 +1334,9 @@
             if (serviceType === 'gmail') {
                 var emailData = { to: to, cc: cc, subject: subject, body: body };
 
-                // 1. אם המערכת רצה בתוך Apps Script
-                if (typeof google !== 'undefined' && google.script && google.script.run) {
-                    google.script.run.withSuccessHandler(function(res) {
-                        if (res && res.success) {
-                            closeEmailModal();
-                            showToast('טיוטת Gmail נוצרה בהצלחה בתיבת הדוא"ל!');
-                        } else {
-                            showToast((res && res.message) || 'שגיאה ביצירת טיוטה', 'error');
-                        }
-                    }).apiCreateGmailDraft(currentAuthToken, emailData);
-                    return;
-                }
-
-                // 2. אם המערכת רצה מ-GitHub Pages - שליחת POST ל-Google Apps Script
                 showToast('יוצר טיוטה ב-Gmail...', 'info');
                 fetch(API_BASE_URL, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         action: 'createGmailDraft',
                         token: currentAuthToken,
@@ -1444,7 +1357,6 @@
                 });
 
             } else {
-                // פתיחה בתוכנת מייל מקומית (Outlook / Mail)
                 var mailtoUrl = 'mailto:' + encodeURIComponent(to) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
                 if (cc) mailtoUrl += '&cc=' + encodeURIComponent(cc);
                 
@@ -1461,7 +1373,6 @@
         }
 
         function fallbackOpenGmailUrl(to, cc, subject, body) {
-            // במקרה שאין חיבור לשרת, העתקת גוף המייל ללוח וקיצור ה-URL למניעת שגיאת 413
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(body);
                 showToast('תוכן המייל המלא הועתק ללוח (Clipboard)', 'info');
@@ -1501,26 +1412,20 @@
                 status: 'pending'
             };
 
-            if (typeof google !== 'undefined' && google.script && google.script.run) {
-                google.script.run.withSuccessHandler(function(res) {
-                    if (res && res.success) {
-                        closeTaskModal();
-                        loadCloudData();
-                        showToast('המשימה נשמרה בהצלחה');
-                    } else {
-                        showToast((res && res.message) || 'שגיאה בשמירת משימה', 'error');
-                    }
-                }).apiSaveTask(currentAuthToken, taskData);
-            } else {
-                if (!taskData.id) taskData.id = 'tsk_' + Date.now();
-                var index = appData.tasks.findIndex(function(t) { return String(t.id) === String(taskData.id); });
-                if (index >= 0) appData.tasks[index] = taskData;
-                else appData.tasks.push(taskData);
-                saveLocalMockData();
-                closeTaskModal();
-                refreshAllViews();
-                showToast('המשימה נשמרה בהצלחה');
-            }
+            fetch(API_BASE_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'saveTask', token: currentAuthToken, taskData: taskData })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(res) {
+                if (res && res.success) {
+                    closeTaskModal();
+                    loadCloudData();
+                    showToast('המשימה נשמרה בהצלחה');
+                } else {
+                    showToast((res && res.message) || 'שגיאה בשמירת משימה', 'error');
+                }
+            });
         }
 
         function toggleTaskStatus(taskId) {
@@ -1528,37 +1433,35 @@
             if (!task) return;
             task.status = task.status === 'completed' ? 'pending' : 'completed';
 
-            if (typeof google !== 'undefined' && google.script && google.script.run) {
-                google.script.run.withSuccessHandler(function(res) {
-                    if (res && res.success) {
-                        loadCloudData();
-                    } else {
-                        showToast((res && res.message) || 'שגיאה בעדכון משימה', 'error');
-                    }
-                }).apiSaveTask(currentAuthToken, task);
-            } else {
-                saveLocalMockData();
-                refreshAllViews();
-            }
+            fetch(API_BASE_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'saveTask', token: currentAuthToken, taskData: task })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(res) {
+                if (res && res.success) {
+                    loadCloudData();
+                } else {
+                    showToast((res && res.message) || 'שגיאה בעדכון משימה', 'error');
+                }
+            });
         }
 
         function deleteTask(taskId) {
             if (!confirm('האם אתה בטוח שברצונך למחוק משימה זו?')) return;
-            if (typeof google !== 'undefined' && google.script && google.script.run) {
-                google.script.run.withSuccessHandler(function(res) {
-                    if (res && res.success) {
-                        loadCloudData();
-                        showToast('המשימה נמחקה');
-                    } else {
-                        showToast((res && res.message) || 'שגיאה במחיקת המשימה', 'error');
-                    }
-                }).apiDeleteTask(currentAuthToken, taskId);
-            } else {
-                appData.tasks = appData.tasks.filter(function(t) { return String(t.id) !== String(taskId); });
-                saveLocalMockData();
-                refreshAllViews();
-                showToast('המשימה נמחקה');
-            }
+            fetch(API_BASE_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'deleteTask', token: currentAuthToken, taskId: taskId })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(res) {
+                if (res && res.success) {
+                    loadCloudData();
+                    showToast('המשימה נמחקה');
+                } else {
+                    showToast((res && res.message) || 'שגיאה במחיקת המשימה', 'error');
+                }
+            });
         }
 
         function renderTasksList() {
