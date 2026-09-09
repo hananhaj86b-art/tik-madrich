@@ -676,6 +676,10 @@
             btn.disabled = true;
             btn.classList.add('opacity-75');
 
+            // איפוס מונע של נתוני זיכרון קודמים לפני טעינת המשתמש החדש
+            appData = { schools: [], meetings: [], tasks: [], annualSummaries: [] };
+            currentSchoolId = null;
+
             var callback = function(res) {
                 btn.disabled = false;
                 btn.classList.remove('opacity-75');
@@ -720,12 +724,26 @@
         }
 
         function handleSignOut() {
+            // 1. מחיקת כל הנתונים והטוקנים מ-localStorage
             localStorage.removeItem('madrich_auth_token');
             localStorage.removeItem('madrich_user_info');
+            localStorage.removeItem('madrich_mock_data');
+            
+            // 2. איפוס מלא של משתני הזיכרון הגלובליים
             currentAuthToken = null;
             currentUser = null;
+            currentSchoolId = null;
+            appData = { schools: [], meetings: [], tasks: [], annualSummaries: [] };
+
+            // 3. איפוס שדות הטופס במסך ההתחברות
+            var emailInput = document.getElementById('auth-email');
+            var passwordInput = document.getElementById('auth-password');
+            if (emailInput) emailInput.value = '';
+            if (passwordInput) passwordInput.value = '';
+
+            // 4. העברה למסך התחברות
             showAuthUI();
-            showToast('התנתקת מהמערכת', 'info');
+            showToast('התנתקת מהמערכת בהצלחה', 'info');
         }
 
         function showAppUI() {
