@@ -1340,6 +1340,8 @@
                     if (res && res.success && res.summary) {
                         document.getElementById('field-notes').value = res.summary;
                         showToast('סיכום AI נוסח בהצלחה');
+                    } else {
+                        showToast((res && res.message) || 'שגיאה בהפקת סיכום AI', 'error');
                     }
                 }).apiGenerateAiSummary(currentAuthToken, prompt);
             } else {
@@ -1406,12 +1408,13 @@
         }
 
         function openTaskModal() {
+            document.getElementById('task-id').value = '';
+            document.getElementById('task-form').reset();
+
             var select = document.getElementById('task-school-id');
             select.innerHTML = appData.schools.map(function(s) { return '<option value="' + s.id + '">' + s.name + '</option>'; }).join('');
             if (currentSchoolId) select.value = currentSchoolId;
 
-            document.getElementById('task-id').value = '';
-            document.getElementById('task-form').reset();
             document.getElementById('modal-task').classList.remove('hidden');
         }
 
@@ -1442,11 +1445,13 @@
                 }).apiSaveTask(currentAuthToken, taskData);
             } else {
                 if (!taskData.id) taskData.id = 'tsk_' + Date.now();
-                appData.tasks.push(taskData);
+                var index = appData.tasks.findIndex(function(t) { return String(t.id) === String(taskData.id); });
+                if (index >= 0) appData.tasks[index] = taskData;
+                else appData.tasks.push(taskData);
                 saveLocalMockData();
                 closeTaskModal();
                 refreshAllViews();
-                showToast('המשימה נוצרה');
+                showToast('המשימה נשמרה בהצלחה');
             }
         }
 
