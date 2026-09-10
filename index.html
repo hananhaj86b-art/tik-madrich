@@ -601,7 +601,7 @@
     </div>
 
     <script>
-        var API_BASE_URL = 'https://script.google.com/macros/s/AKfycbyQt4jFTuCv7v0jum_lzgPfv0EVcfgeWjlcsPBnSW9k-ePfpc9rH5R25BPYty1ACnh3bQ/exec';
+        var API_BASE_URL = 'https://script.google.com/macros/s/AKfycbxmGbDjgke_Ajxulpu-Da1kOF0NpYgw3tQooq8z6MyvqTAoY5TY5v6T4bTG7D350nT6qQ/exec';
 
         var currentAuthToken = localStorage.getItem('madrich_auth_token') || null;
         var currentUser = null;
@@ -1071,8 +1071,6 @@
             document.getElementById('field-challenges').value = meeting.challenges || '';
             document.getElementById('field-recommendations').value = meeting.recommendations || '';
             document.getElementById('field-notes').value = meeting.notes || '';
-            document.getElementById('field-attachment-url').value = meeting.attachmentUrl || '';
-            document.getElementById('field-attachment-name').value = meeting.attachmentName || '';
 
             openEmailModalForMeeting();
         }
@@ -1194,7 +1192,7 @@
                 closeSchoolModal();
                 refreshAllViews();
                 showToast('בית הספר נשמר במצב מקומי');
-            } font-semibold {
+            } finally {
                 if (btn) { btn.disabled = false; btn.innerText = 'שמור בענן'; }
             }
         }
@@ -1297,7 +1295,7 @@
             .then(function(res) {
                 if (res && res.success) {
                     loadCloudData();
-                    showToast('המפגש נמחקה');
+                    showToast('המפגש נמחק');
                 } else {
                     showToast((res && res.message) || 'שגיאה במחיקת מפגש', 'error');
                 }
@@ -1340,8 +1338,6 @@
             var challenges = document.getElementById('field-challenges').value;
             var recommendations = document.getElementById('field-recommendations').value;
             var notes = document.getElementById('field-notes').value;
-            var attachmentUrl = document.getElementById('field-attachment-url').value;
-            var attachmentName = document.getElementById('field-attachment-name').value;
 
             var bodyText = 'שלום רב,\n\nלהלן סיכום מפגש הדרכה בנושא: ' + title + ' שנערך בתאריך ' + date + '.\n\n';
             if (achievements) bodyText += '🏆 הישגים מרכזיים והצלחות:\n' + achievements + '\n\n';
@@ -1349,10 +1345,6 @@
             if (challenges) bodyText += '⚠️ אתגרים וחסמים שזוהו:\n' + challenges + '\n\n';
             if (recommendations) bodyText += '🎯 יעדים והמלצות להמשך:\n' + recommendations + '\n\n';
             if (notes) bodyText += '📝 סיכום כללי והערות:\n' + notes + '\n\n';
-
-            if (attachmentUrl) {
-                bodyText += '📎 קובץ מצורף למפגש: ' + (attachmentName || 'קישור למסמך') + '\n' + attachmentUrl + '\n\n';
-            }
 
             bodyText += 'בברכה,\n' + ((currentUser && currentUser.fullName) ? currentUser.fullName : 'מדריך/ה פדגוגי/ת');
 
@@ -1371,18 +1363,9 @@
             var cc = document.getElementById('email-cc').value;
             var subject = document.getElementById('email-subject').value;
             var body = document.getElementById('email-body').value;
-            var attachmentUrl = document.getElementById('field-attachment-url').value;
-            var attachmentName = document.getElementById('field-attachment-name').value;
 
             if (serviceType === 'gmail') {
-                var emailData = { 
-                    to: to, 
-                    cc: cc, 
-                    subject: subject, 
-                    body: body,
-                    attachmentUrl: attachmentUrl,
-                    attachmentName: attachmentName
-                };
+                var emailData = { to: to, cc: cc, subject: subject, body: body };
 
                 showToast('יוצר טיוטה ב-Gmail...', 'info');
                 fetch(API_BASE_URL, {
